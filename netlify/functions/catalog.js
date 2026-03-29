@@ -14,7 +14,8 @@ exports.handler = async () => {
     });
     if (!res.ok) throw new Error(`GitHub returned ${res.status} for catalog data`);
 
-    const code = await res.text();
+    // Replace `const`/`let` with `var` so declarations attach to the vm sandbox
+    const code = (await res.text()).replace(/\b(const|let)\b/g, 'var');
     const sandbox = {};
     vm.runInNewContext(code, sandbox, { timeout: 5000 });
 
