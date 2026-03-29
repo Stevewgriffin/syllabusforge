@@ -566,6 +566,10 @@ function loadCourseAndAdvance() {
   const prog = programs.find(p => p.id === S.selectedProgram);
   const courseInProg = prog?.courses.find(c => c.id === S.selectedCourse);
 
+  // Always reset SLOs so a previously loaded course never bleeds into the new selection
+  S.slos = [];
+  S.slosFromCatalog = false;
+
   if (data) {
     S.course = {
       title: data.title || '',
