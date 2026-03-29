@@ -389,6 +389,10 @@ function step3() {
   return `<div class="card">
     <div class="card-title">Course Materials</div>
     <div class="card-hint">Upload textbooks and readings as PDFs. Claude extracts chapter titles, key concepts, and page ranges to build a reading schedule grounded in your actual materials.</div>
+    <div class="notice" style="background:var(--navy-light);border-color:#B3C5DF;margin-bottom:18px">
+      <strong style="color:var(--navy)">Importing from Populi?</strong>
+      <span style="color:#4A4A6A"> Use the <a href="/scraper.html" style="color:var(--amber);font-weight:600">Populi Scraper tool</a> to extract your existing course content and import it here.</span>
+    </div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
       <div style="font-size:28px;margin-bottom:8px">📚</div>
       <div style="font-weight:600;color:var(--navy);font-size:14px;margin-bottom:3px">Drop PDFs here or click to browse</div>
