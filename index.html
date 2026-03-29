@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SyllabusForge — Williamson College</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: #F8F5EF; min-height: 100vh; color: #1A1A2E; }
+:root {
+  --navy: #1E2D4A; --amber: #B8721D; --amber-light: #FDF3E3; --amber-border: #EDD8B5;
+  --cream: #F8F5EF; --white: #FFFFFF; --border: #E4DDD0; --muted: #7A7A8A;
+  --success: #2A6049; --navy-light: #EEF2F8; --green: #2A6049; --green-light: #EBF5F0; --green-border: #B3D9C8;
+}
+.header { background: var(--navy); padding: 18px 28px; display: flex; align-items: center; justify-content: space-between; }
+.logo { font-family: 'Playfair Display', serif; color: #FFF; font-size: 20px; font-weight: 700; }
+.logo-sub { color: #8BA3C7; font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase; display: block; margin-top: 2px; }
+.course-badge { color: #8BA3C7; font-size: 13px; }
+.progress-bar { background: #EDE8DF; padding: 14px 28px; display: flex; align-items: center; border-bottom: 1px solid var(--border); overflow-x: auto; gap: 0; }
+.step-item { display: flex; align-items: center; gap: 8px; cursor: default; white-space: nowrap; }
+.step-item.clickable { cursor: pointer; }
+.step-dot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; transition: all 0.2s; }
+.step-dot.done { background: var(--amber); color: #FFF; }
+.step-dot.active { background: var(--navy); color: #FFF; }
+.step-dot.pending { background: #CFC9BE; color: #8A8A9A; }
+.step-label { font-size: 12px; font-weight: 500; }
+.step-label.active { color: var(--navy); font-weight: 600; }
+.step-label.done { color: var(--amber); }
+.step-label.pending { color: #9A9AAA; }
+.step-conn { width: 28px; height: 1px; margin: 0 6px; flex-shrink: 0; }
+.step-conn.done { background: var(--amber); }
+.step-conn.pending { background: #CFC9BE; }
+.main { padding: 28px; max-width: 860px; margin: 0 auto; }
+.card { background: var(--white); border-radius: 12px; border: 1px solid var(--border); padding: 28px; margin-bottom: 20px; }
+.card-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+.card-hint { color: var(--muted); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+label { display: block; font-size: 11px; font-weight: 600; color: #4A4A6A; letter-spacing: 0.9px; text-transform: uppercase; margin-bottom: 5px; }
+input[type=text], textarea, select {
+  width: 100%; border: 1.5px solid var(--border); border-radius: 7px;
+  padding: 9px 13px; font-size: 14px; color: var(--navy); background: #FAFAF5;
+  outline: none; font-family: 'DM Sans', sans-serif; transition: border-color 0.2s;
+}
+input[type=text]:focus, textarea:focus, select:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,45,74,0.08); }
+select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237A7A8A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; cursor: pointer; }
+textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.field { margin-bottom: 14px; }
+.btn-primary { background: var(--navy); color: #FFF; border: none; border-radius: 7px; padding: 10px 22px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-amber { background: var(--amber); color: #FFF; border: none; border-radius: 7px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: opacity 0.2s; }
+.btn-amber:hover { opacity: 0.85; }
+.btn-ghost { background: transparent; color: var(--navy); border: 1.5px solid var(--border); border-radius: 7px; padding: 9px 18px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: background 0.2s; }
+.btn-ghost:hover { background: #F0EDE7; }
+.btn-sm { background: #F0ECE3; color: var(--navy); border: none; border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+.btn-export { border: none; border-radius: 7px; padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; color: #FFF; transition: opacity 0.2s; }
+.btn-export:hover { opacity: 0.85; }
+.nav { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+.slo-pill { background: #F5F2EC; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.slo-pill.catalog-slo { border-left: 3px solid var(--amber); }
+.slo-num { background: var(--navy); color: #FFF; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.slo-del { background: none; border: none; cursor: pointer; color: #CCC; font-size: 18px; line-height: 1; padding: 0; flex-shrink: 0; }
+.slo-del:hover { color: #E54; }
+.file-item { background: #F5F2EC; border-radius: 8px; padding: 11px 14px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.file-name { font-size: 13px; font-weight: 500; color: var(--navy); }
+.file-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.dropzone { border: 2px dashed #D9D3C8; border-radius: 10px; padding: 36px 28px; text-align: center; cursor: pointer; margin-bottom: 16px; background: #FAFAF5; transition: all 0.2s; }
+.dropzone:hover { border-color: var(--amber); background: var(--amber-light); }
+.notice { border-radius: 7px; padding: 11px 14px; font-size: 13px; margin-bottom: 12px; line-height: 1.5; }
+.notice-warn { background: var(--amber-light); color: #8A5510; border: 1px solid var(--amber-border); }
+.notice-info { background: var(--navy-light); color: #2A3E60; border: 1px solid #C5D3E8; }
+.notice-success { background: var(--green-light); color: #1E5039; border: 1px solid var(--green-border); }
+.notice-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #F5F2EC; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+.slabel { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.sval { font-size: 14px; color: var(--navy); font-weight: 500; margin-top: 2px; }
+.gen-spinner { text-align: center; padding: 40px 0; }
+.spinner-icon { font-size: 36px; display: inline-block; animation: spin 1.8s linear infinite; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+.gen-msg { font-weight: 600; color: var(--navy); font-size: 15px; margin-top: 12px; margin-bottom: 4px; }
+.gen-sub { font-size: 13px; color: var(--muted); }
+.review-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+.review-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 3px; }
+.review-meta { font-size: 13px; color: var(--muted); }
+.export-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 22px; }
+.tab-btn { background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; padding: 9px 18px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
+.tab-btn.active { color: var(--amber); border-bottom-color: var(--amber); font-weight: 600; }
+.week-card { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+.week-header { padding: 12px 18px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s; }
+.week-header.closed { background: #FAFAF5; }
+.week-header.open { background: var(--navy); }
+.wh-left { display: flex; align-items: center; gap: 12px; }
+.wbadge { border-radius: 5px; padding: 2px 9px; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+.wbadge.closed { background: #E4DDD0; color: #7A7A8A; }
+.wbadge.open { background: var(--amber); color: #FFF; }
+.wtitle { font-weight: 600; font-size: 14px; }
+.wtitle.closed { color: var(--navy); }
+.wtitle.open { color: #FFF; }
+.wtoggle { font-size: 20px; }
+.wtoggle.closed { color: #9A9AAA; }
+.wtoggle.open { color: #FFF; }
+.week-body { padding: 18px; background: #FFF; }
+.sec-label { font-size: 11px; font-weight: 600; color: #4A4A6A; letter-spacing: 0.9px; text-transform: uppercase; margin-bottom: 8px; display: block; }
+.tag { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
+.tag-navy { background: var(--navy-light); color: var(--navy); }
+.tag-amber { background: var(--amber-light); color: #9A5D15; }
+.tag-muted { background: #F0EDE7; color: #6A6A8A; }
+.tags-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.reading-item { padding: 9px 12px; background: #F8F5EF; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+.discussion-item { padding: 12px 14px; background: var(--amber-light); border: 1px solid var(--amber-border); border-radius: 6px; margin-bottom: 8px; }
+.discussion-prompt { font-size: 13px; color: #3A2A10; line-height: 1.65; margin-bottom: 8px; }
+.assess-card { border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 12px; }
+.assess-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+.assess-weight { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 700; color: var(--amber); line-height: 1; }
+.prompt-box { margin-top: 8px; padding: 14px; background: #FAFAF5; border-radius: 7px; font-size: 13px; line-height: 1.75; color: #3A3A5A; white-space: pre-wrap; }
+details summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--navy); padding: 8px 0; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: '▸ '; }
+details[open] summary::before { content: '▾ '; }
+.grade-bar { height: 10px; border-radius: 5px; overflow: hidden; display: flex; margin-bottom: 8px; }
+.grade-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+.grade-item { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+.grade-pct { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 700; color: var(--amber); min-width: 54px; line-height: 1; }
+.grade-name { font-weight: 600; font-size: 14px; color: var(--navy); margin-bottom: 4px; }
+.grade-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.populi-note { padding: 14px; background: var(--navy-light); border-radius: 7px; font-size: 13px; color: #2A3E60; line-height: 1.6; margin-top: 16px; }
+/* Catalog step styles */
+.catalog-loading { text-align: center; padding: 48px 24px; }
+.catalog-loading-icon { font-size: 32px; display: inline-block; animation: spin 1.5s linear infinite; margin-bottom: 12px; }
+.program-card { border: 1.5px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 10px; cursor: pointer; transition: all 0.18s; background: #FAFAF5; }
+.program-card:hover { border-color: var(--navy); background: var(--white); }
+.program-card.selected { border-color: var(--amber); background: var(--amber-light); }
+.program-name { font-weight: 600; font-size: 15px; color: var(--navy); }
+.program-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.course-list { margin-top: 18px; }
+.course-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; background: #FAFAF5; transition: all 0.15s; }
+.course-row:hover { border-color: var(--navy); background: var(--white); }
+.course-row.selected { border-color: var(--amber); background: var(--amber-light); }
+.course-code { font-size: 11px; font-weight: 700; color: var(--amber); background: var(--amber-light); border: 1px solid var(--amber-border); border-radius: 4px; padding: 2px 7px; letter-spacing: 0.5px; white-space: nowrap; min-width: 74px; text-align: center; }
+.course-title { font-size: 14px; font-weight: 500; color: var(--navy); flex: 1; }
+.course-cr { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.course-check { font-size: 16px; color: var(--amber); }
+.slo-preview { background: var(--navy-light); border: 1px solid #C5D3E8; border-radius: 10px; padding: 16px 18px; margin-top: 16px; }
+.slo-preview-title { font-size: 11px; font-weight: 700; color: var(--navy); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+.slo-preview-item { font-size: 13px; color: #2A3E60; line-height: 1.55; padding: 6px 0; border-bottom: 1px solid #D5E0EE; display: flex; gap: 8px; }
+.slo-preview-item:last-child { border-bottom: none; }
+.slo-n { font-size: 10px; font-weight: 700; color: var(--amber); margin-top: 3px; white-space: nowrap; }
+/* Inline SLO editing */
+.slo-text-edit { background: transparent; border: none; outline: none; font-size: 13px; color: var(--navy); line-height: 1.5; width: 100%; font-family: 'DM Sans', sans-serif; cursor: text; padding: 0; resize: none; min-height: 20px; overflow: hidden; }
+.slo-text-edit:focus { background: #FFF; border-radius: 4px; padding: 4px 6px; outline: 2px solid var(--amber); }
+.catalog-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--green-light); color: #1E5039; border: 1px solid var(--green-border); border-radius: 5px; padding: 3px 10px; font-size: 11px; font-weight: 600; }
+@media (max-width: 600px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  .review-header { flex-direction: column; }
+  .summary-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="logo">SyllabusForge</div>
+    <span class="logo-sub">Williamson College · AI Course Builder</span>
+  </div>
+  <div class="course-badge" id="header-badge"></div>
+</div>
+
+<div class="progress-bar" id="progress-bar"></div>
+<div class="main" id="app"></div>
+
+<script>
+const STEPS = ['Catalog','Details','Outcomes','Materials','Generate','Review'];
+const GRADE_COLORS = ['#1E2D4A','#B8721D','#2A6049','#6B4FA0','#C55A3A','#2C7A8C'];
+
+let S = {
+  step: 0,
+  // Catalog
+  catalog: null,
+  catalogLoading: false,
+  catalogError: '',
+  selectedProgram: '',
+  selectedCourse: '',
+  // Course
+  course: { title:'', code:'', creditHours:'3', weeks:'15', description:'', instructor:'', term:'', programId:'', courseId:'' },
+  slos: [],
+  sloInput: '',
+  slosFromCatalog: false,
+  // Files
+  files: [],
+  // Generation
+  generating: false, genMsg: '', genInterval: null,
+  result: null, error: '', tab: 'schedule', expandedWeek: null
+};
+
+function R() { renderHeader(); renderProgress(); renderApp(); }
+
+function renderHeader() {
+  const b = document.getElementById('header-badge');
+  b.textContent = (S.course.code && S.course.title) ? `${S.course.code} · ${S.course.title}` : '';
+}
+
+function renderProgress() {
+  document.getElementById('progress-bar').innerHTML = STEPS.map((lbl, i) => {
+    const done = i < S.step, active = i === S.step;
+    const clickable = i < S.step ? ' clickable' : '';
+    return `<div class="step-item${clickable}" onclick="${i<S.step?'toStep('+i+')':'void 0'}">
+      <div class="step-dot ${done?'done':active?'active':'pending'}">${done?'✓':i+1}</div>
+      <span class="step-label ${done?'done':active?'active':'pending'}">${lbl}</span>
+    </div>${i<STEPS.length-1?`<div class="step-conn ${i<S.step?'done':'pending'}"></div>`:''}`;
+  }).join('');
+}
+
+function renderApp() {
+  const app = document.getElementById('app');
+  if (S.step===0) app.innerHTML = step0();
+  else if (S.step===1) app.innerHTML = step1();
+  else if (S.step===2) app.innerHTML = step2();
+  else if (S.step===3) app.innerHTML = step3();
+  else if (S.step===4) app.innerHTML = step4();
+  else if (S.step===5) app.innerHTML = step5();
+}
+
+// ── STEP 0: CATALOG PICKER ───────────────────────────────────────────────────
+function step0() {
+  if (S.catalogLoading) {
+    return `<div class="card">
+      <div class="card-title">Select Your Course</div>
+      <div class="catalog-loading">
+        <div class="catalog-loading-icon">📚</div>
+        <div style="font-weight:600;color:var(--navy);font-size:15px">Loading Williamson College Catalog…</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">Fetching programs and course SLOs</div>
+      </div>
+    </div>`;
+  }
+
+  if (S.catalogError) {
+    return `<div class="card">
+      <div class="card-title">Select Your Course</div>
+      <div class="notice notice-error" style="margin-bottom:20px">⚠ Could not load catalog: ${e(S.catalogError)}</div>
+      <div class="nav"><span></span><button class="btn-amber" onclick="loadCatalog()">Try Again</button></div>
+    </div>`;
+  }
+
+  if (!S.catalog) {
+    // Trigger load on first render
+    setTimeout(loadCatalog, 0);
+    return `<div class="card"><div class="catalog-loading"><div class="catalog-loading-icon">📚</div><div style="font-weight:600;color:var(--navy)">Connecting to catalog…</div></div></div>`;
+  }
+
+  const { programs, courseSlos } = S.catalog;
+
+  // Build program options
+  const progOptions = programs.map(p =>
+    `<option value="${e(p.id)}" ${S.selectedProgram===p.id?'selected':''}>${e(p.name)}</option>`
+  ).join('');
+
+  // Get courses for selected program
+  let courseSection = '';
+  let sloPreview = '';
+  let canProceed = false;
+
+  if (S.selectedProgram) {
+    const prog = programs.find(p => p.id === S.selectedProgram);
+    if (prog) {
+      // Build course rows, only show those with SLO data
+      const courseRows = prog.courses.map(c => {
+        const hasSlos = !!courseSlos[c.id];
+        if (!hasSlos && !c.name.includes('TBD')) return '';
+        const sel = S.selectedCourse === c.id;
+        return `<div class="course-row ${sel?'selected':''}" onclick="selectCourse('${e(c.id)}')">
+          <span class="course-code">${e(c.code)}</span>
+          <span class="course-title">${e(c.name)}</span>
+          <span class="course-cr">${c.cr} cr</span>
+          ${sel?'<span class="course-check">✓</span>':''}
+        </div>`;
+      }).filter(Boolean).join('');
+
+      courseSection = `<div style="margin-top:20px">
+        <label>Select Course</label>
+        <div class="course-list">${courseRows || '<div style="color:var(--muted);font-size:14px;padding:12px 0">No courses with catalog SLOs found for this program.</div>'}</div>
+      </div>`;
+    }
+  }
+
+  if (S.selectedCourse && courseSlos[S.selectedCourse]) {
+    const data = courseSlos[S.selectedCourse];
+    sloPreview = `<div class="slo-preview">
+      <div class="slo-preview-title">Course SLOs — will auto-load into Step 3</div>
+      ${data.slos.map(s => `<div class="slo-preview-item"><span class="slo-n">SLO ${s.number}</span><span>${e(s.text)}</span></div>`).join('')}
+    </div>`;
+    canProceed = true;
+  }
+
+  return `<div class="card">
+    <div class="card-title">Select Your Course</div>
+    <div class="card-hint">Choose your program and course. SyllabusForge will automatically load your course details and Student Learning Outcomes from the Williamson College catalog — no manual entry needed.</div>
+
+    <div class="notice notice-info" style="margin-bottom:20px">
+      📋 Catalog connected — ${programs.length} programs, ${Object.keys(courseSlos).length} courses with SLOs
+    </div>
+
+    <div class="field">
+      <label>Program</label>
+      <select onchange="selectProgram(this.value)">
+        <option value="">— Select a program —</option>
+        ${progOptions}
+      </select>
+    </div>
+
+    ${courseSection}
+    ${sloPreview}
+
+    <div class="nav">
+      <span></span>
+      <button class="btn-primary" onclick="loadCourseAndAdvance()" ${canProceed?'':'disabled'}>Load Course & Continue →</button>
+    </div>
+  </div>`;
+}
+
+// ── STEP 1: COURSE DETAILS ───────────────────────────────────────────────────
+function step1() {
+  const c = S.course;
+  const ok = c.title.trim() && c.code.trim();
+  return `<div class="card">
+    <div class="card-title">Course Details</div>
+    <div class="card-hint">Pre-filled from the Williamson College catalog. Edit any field as needed — these appear on your Populi syllabus.</div>
+    <div class="grid-2">
+      <div class="field"><label>Course Title</label><input type="text" value="${e(c.title)}" placeholder="e.g. Essentials of Management" oninput="uc('title',this.value)"></div>
+      <div class="field"><label>Course Code</label><input type="text" value="${e(c.code)}" placeholder="e.g. MGT 301" oninput="uc('code',this.value)"></div>
+    </div>
+    <div class="grid-3">
+      <div class="field"><label>Credit Hours</label>
+        <select onchange="uc('creditHours',this.value)">${[1,2,3,4,5,6].map(n=>`<option ${c.creditHours==n?'selected':''}>${n}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Number of Weeks</label>
+        <select onchange="uc('weeks',this.value)">${[4,6,7,8,10,12,14,15,16].map(n=>`<option ${c.weeks==n?'selected':''}>${n}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Term</label><input type="text" value="${e(c.term)}" placeholder="e.g. Fall 2025" oninput="uc('term',this.value)"></div>
+    </div>
+    <div class="field"><label>Instructor</label><input type="text" value="${e(c.instructor)}" placeholder="e.g. Dr. Jane Smith" oninput="uc('instructor',this.value)"></div>
+    <div class="field"><label>Course Description</label><textarea placeholder="Enter your catalog course description…" oninput="uc('description',this.value)">${e(c.description)}</textarea></div>
+    <div class="nav">
+      <button class="btn-ghost" onclick="toStep(0)">← Back</button>
+      <button class="btn-primary" onclick="toStep(2)" ${ok?'':'disabled'}>Next: Outcomes →</button>
+    </div>
+  </div>`;
+}
+
+// ── STEP 2: LEARNING OUTCOMES ────────────────────────────────────────────────
+function step2() {
+  const catalogBadge = S.slosFromCatalog
+    ? `<span class="catalog-badge">✓ Loaded from Williamson College Catalog</span>`
+    : '';
+  return `<div class="card">
+    <div class="card-title">Student Learning Outcomes</div>
+    <div class="card-hint">These SLOs drive every discussion prompt, assignment, and assessment Claude generates — and map directly to your SACSCOC IE documentation.</div>
+
+    ${catalogBadge ? `<div style="margin-bottom:16px">${catalogBadge}</div>` : ''}
+
+    <div style="display:flex;gap:10px;margin-bottom:18px;">
+      <input type="text" id="slo-inp" value="${e(S.sloInput)}" placeholder="Add a custom SLO and press Enter or click Add…" oninput="S.sloInput=this.value" onkeydown="if(event.key==='Enter')addSlo()">
+      <button class="btn-amber" onclick="addSlo()" style="white-space:nowrap">+ Add</button>
+    </div>
+
+    ${S.slos.length===0
+      ? `<div style="text-align:center;padding:28px;color:#9A9AAA;font-size:14px;">No SLOs yet. Go back to select a course, or add SLOs manually.</div>`
+      : S.slos.map((s,i)=>`<div class="slo-pill ${S.slosFromCatalog&&i<5?'catalog-slo':''}">
+          <div class="slo-num">${i+1}</div>
+          <textarea class="slo-text-edit" rows="1" oninput="editSlo(${i},this.value);autoResize(this)">${e(s)}</textarea>
+          <button class="slo-del" onclick="rmSlo(${i})">×</button>
+        </div>`).join('')}
+
+    ${S.slos.length>0?`<div class="notice notice-success" style="margin-top:12px">✓ ${S.slos.length} SLO${S.slos.length>1?'s':''} — Claude will align all assessments and discussions to these outcomes</div>`:''}
+
+    <div class="nav">
+      <button class="btn-ghost" onclick="toStep(1)">← Back</button>
+      <button class="btn-primary" onclick="toStep(3)" ${S.slos.length>0?'':'disabled'}>Next: Materials →</button>
+    </div>
+  </div>`;
+}
+
+// ── STEP 3: MATERIALS ────────────────────────────────────────────────────────
+function step3() {
+  return `<div class="card">
+    <div class="card-title">Course Materials</div>
+    <div class="card-hint">Upload textbooks and readings as PDFs. Claude extracts chapter titles, key concepts, and page ranges to build a reading schedule grounded in your actual materials.</div>
+    <div class="dropzone" onclick="document.getElementById('fi').click()">
+      <div style="font-size:28px;margin-bottom:8px">📚</div>
+      <div style="font-weight:600;color:var(--navy);font-size:14px;margin-bottom:3px">Drop PDFs here or click to browse</div>
+      <div style="font-size:12px;color:var(--muted)">Textbooks · Course packets · Articles · Any PDF material</div>
+    </div>
+    <input id="fi" type="file" accept=".pdf" multiple style="display:none" onchange="handleFiles(event)">
+    ${S.files.map((f,i)=>`<div class="file-item"><span style="font-size:18px">📄</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`).join('')}
+    ${S.files.length===0
+      ? `<div class="notice notice-warn">⚠ No materials uploaded — Claude will still generate a course from your description and SLOs, but readings will be representative rather than chapter-specific.</div>`
+      : `<div class="notice notice-success">✓ ${S.files.length} document${S.files.length>1?'s':''} ready — Claude will extract real chapter content and page ranges</div>`}
+    <div class="nav">
+      <button class="btn-ghost" onclick="toStep(2)">← Back</button>
+      <button class="btn-primary" onclick="toStep(4)">Next: Review & Generate →</button>
+    </div>
+  </div>`;
+}
+
+// ── STEP 4: GENERATE ─────────────────────────────────────────────────────────
+function step4() {
+  const c = S.course;
+  const items = [
+    ['📅',`${c.weeks}-week course schedule`,'Topics and themes from your materials'],
+    ['📖','Reading assignments','Chapter-by-chapter from your uploaded texts'],
+    ['💬','Discussion prompts',`2–3 per week, mapped to your ${S.slos.length} SLOs`],
+    ['📝','Major assessments','Papers and projects with full prompts and SLO alignment'],
+    ['📊','Grading structure','Weighted categories ready for Populi setup'],
+  ];
+  return `<div class="card">
+    <div class="card-title">Ready to Generate</div>
+    <div class="card-hint">Review your course setup, then let Claude compile the complete course structure.</div>
+    <div class="summary-grid">
+      <div><div class="slabel">Course</div><div class="sval">${e(c.title)} (${e(c.code)})</div></div>
+      <div><div class="slabel">Duration</div><div class="sval">${c.weeks} weeks · ${c.creditHours} credit hours</div></div>
+      <div><div class="slabel">Learning Outcomes</div><div class="sval">${S.slos.length} SLOs defined</div></div>
+      <div><div class="slabel">Materials</div><div class="sval">${S.files.length} PDF${S.files.length!==1?'s':''} uploaded</div></div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:12px">What Claude Will Generate</div>
+    ${items.map(([ico,title,desc])=>`<div style="display:flex;gap:14px;padding:11px 14px;background:#FAFAF5;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;align-items:center"><span style="font-size:18px">${ico}</span><div><div style="font-weight:600;font-size:13px;color:var(--navy)">${title}</div><div style="font-size:12px;color:var(--muted)">${desc}</div></div></div>`).join('')}
+    ${S.error?`<div class="notice notice-error" style="margin-top:16px">⚠ ${e(S.error)}</div>`:''}
+    ${S.generating
+      ? `<div class="gen-spinner"><div class="spinner-icon">⚙️</div><div class="gen-msg" id="gen-msg">${e(S.genMsg)}</div><div class="gen-sub">This may take 30–90 seconds depending on material size…</div></div>`
+      : `<div class="nav"><button class="btn-ghost" onclick="toStep(3)">← Back</button><button class="btn-amber" onclick="generate()" style="padding:12px 28px;font-size:14px">✨ Generate Course →</button></div>`}
+  </div>`;
+}
+
+// ── STEP 5: REVIEW ───────────────────────────────────────────────────────────
+function step5() {
+  if (!S.result) return '<div class="card">No result available.</div>';
+  const r = S.result; const c = S.course;
+  return `
+    <div class="review-header">
+      <div><div class="review-title">${e(c.title)}</div><div class="review-meta">${e(c.code)} · ${c.creditHours} Credits · ${c.weeks} Weeks · ${e(c.term)}</div></div>
+      <div class="export-row">
+        <button class="btn-export" style="background:#1E2D4A" onclick="dlJSON()">⬇ JSON</button>
+        <button class="btn-export" style="background:#B8721D" onclick="dlSyllabus()">⬇ Syllabus</button>
+        <button class="btn-export" style="background:#2A6049" onclick="dlCSV()">⬇ Populi CSV</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn ${S.tab==='schedule'?'active':''}" onclick="setTab('schedule')">📅 Schedule</button>
+      <button class="tab-btn ${S.tab==='assessments'?'active':''}" onclick="setTab('assessments')">📝 Assessments</button>
+      <button class="tab-btn ${S.tab==='grading'?'active':''}" onclick="setTab('grading')">📊 Grading</button>
+    </div>
+    ${S.tab==='schedule'?renderSched(r):''}
+    ${S.tab==='assessments'?renderAssess(r):''}
+    ${S.tab==='grading'?renderGrading(r):''}
+    <div style="text-align:center;margin-top:20px"><button class="btn-ghost" onclick="resetAll()">← Build Another Course</button></div>`;
+}
+
+function renderSched(r) {
+  if (!r.schedule?.length) return '<div class="notice notice-warn">No schedule generated.</div>';
+  return r.schedule.map(w => {
+    const open = S.expandedWeek === w.week;
+    return `<div class="week-card">
+      <div class="week-header ${open?'open':'closed'}" onclick="toggleW(${w.week})">
+        <div class="wh-left">
+          <span class="wbadge ${open?'open':'closed'}">WK ${w.week}</span>
+          <span class="wtitle ${open?'open':'closed'}">${e(w.title||'')}</span>
+        </div>
+        <span class="wtoggle ${open?'open':'closed'}">${open?'−':'+'}</span>
+      </div>
+      ${open?`<div class="week-body">
+        ${w.themes?.length?`<span class="sec-label">Topics</span><div class="tags-row">${w.themes.map(t=>`<span class="tag tag-navy">${e(t)}</span>`).join('')}</div>`:''}
+        ${w.readings?.length?`<span class="sec-label">Readings</span>${w.readings.map(rd=>`<div class="reading-item"><strong style="color:var(--navy)">${e(rd.source||'')}</strong> <span style="color:var(--muted)">— ${e(rd.section||'')}</span>${rd.focus?`<div style="font-size:12px;color:#9A9AAA;margin-top:2px;font-style:italic">${e(rd.focus)}</div>`:''}</div>`).join('')}`:''}
+        ${w.discussions?.length?`<span class="sec-label" style="margin-top:14px;display:block">Discussion Prompts</span>${w.discussions.map(d=>`<div class="discussion-item"><div class="discussion-prompt">${e(d.prompt||'')}</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="tag tag-amber">${e(d.slo||'')}</span><span style="font-size:11px;color:#9A7A5A">${e(d.format||'')}</span></div></div>`).join('')}`:''}
+        ${w.notes?`<div style="margin-top:10px;font-size:12px;color:var(--muted);font-style:italic">${e(w.notes)}</div>`:''}
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderAssess(r) {
+  if (!r.assessments?.length) return '<div class="notice notice-warn">No assessments generated.</div>';
+  return r.assessments.map(a=>`<div class="assess-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:12px">
+      <div style="flex:1">
+        <div class="assess-title">${e(a.title||'')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span class="tag tag-navy">${e(a.type||'')}</span>
+          <span class="tag tag-amber">Due Week ${a.dueWeek||'?'}</span>
+          ${(a.slos||[]).map(s=>`<span class="tag tag-muted">${e(s)}</span>`).join('')}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div class="assess-weight">${a.gradingWeight||0}%</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">${e(a.length||'')}</div>
+      </div>
+    </div>
+    <div style="font-size:14px;color:#4A4A6A;line-height:1.7;margin-bottom:12px">${e(a.description||'')}</div>
+    <details><summary>View Full Assignment Prompt</summary><div class="prompt-box">${e(a.fullPrompt||'')}</div></details>
+  </div>`).join('');
+}
+
+function renderGrading(r) {
+  if (!r.grading?.length) return '<div class="notice notice-warn">No grading structure generated.</div>';
+  const total = r.grading.reduce((s,g)=>s+(g.weight||0),0);
+  return `<div class="card">
+    <div class="card-title">Grading Structure</div>
+    <div class="card-hint">Configure these categories in Populi under Course → Assignments → Grading Categories.</div>
+    <div class="grade-bar">${r.grading.map((g,i)=>`<div style="width:${g.weight||0}%;background:${GRADE_COLORS[i%GRADE_COLORS.length]}" title="${e(g.category)}: ${g.weight}%"></div>`).join('')}</div>
+    <div class="grade-legend">${r.grading.map((g,i)=>`<div style="display:flex;align-items:center;gap:5px;font-size:12px;color:#4A4A6A"><div style="width:10px;height:10px;border-radius:2px;background:${GRADE_COLORS[i%GRADE_COLORS.length]}"></div>${e(g.category)} (${g.weight}%)</div>`).join('')}</div>
+    ${r.grading.map(g=>`<div class="grade-item"><div class="grade-pct">${g.weight||0}%</div><div><div class="grade-name">${e(g.category||'')}</div><div class="grade-desc">${e(g.description||'')}</div>${g.slos?.length?`<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">${g.slos.map(s=>`<span class="tag tag-amber">${e(s)}</span>`).join('')}</div>`:''}</div></div>`).join('')}
+    <div class="populi-note"><strong>Populi Setup Note:</strong> Go to Course → Assignments → Grading Categories. Create each category above with the listed weight. Then assign each week's discussions and major assessments to the appropriate category. Weights currently total <strong>${total}%</strong>.</div>
+  </div>`;
+}
+
+// ── CATALOG ACTIONS ──────────────────────────────────────────────────────────
+async function loadCatalog() {
+  S.catalogLoading = true; S.catalogError = ''; R();
+  try {
+    const res = await fetch('/api/catalog');
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    S.catalog = await res.json();
+    if (S.catalog.error) throw new Error(S.catalog.error);
+  } catch (err) {
+    S.catalogError = err.message;
+  } finally {
+    S.catalogLoading = false; R();
+  }
+}
+
+function selectProgram(id) {
+  S.selectedProgram = id;
+  S.selectedCourse = '';
+  R();
+}
+
+function selectCourse(id) {
+  S.selectedCourse = id;
+  R();
+}
+
+function loadCourseAndAdvance() {
+  if (!S.selectedCourse || !S.catalog) return;
+  const { courseSlos, programs } = S.catalog;
+  const data = courseSlos[S.selectedCourse];
+  const prog = programs.find(p => p.id === S.selectedProgram);
+  const courseInProg = prog?.courses.find(c => c.id === S.selectedCourse);
+
+  if (data) {
+    S.course = {
+      title: data.title || '',
+      code: data.code || '',
+      creditHours: String(data.credits || 3),
+      weeks: '15',
+      description: '',
+      instructor: '',
+      term: '',
+      programId: S.selectedProgram,
+      courseId: S.selectedCourse,
+    };
+    S.slos = data.slos.map(s => s.text);
+    S.slosFromCatalog = true;
+  }
+  S.step = 1; R();
+}
+
+// ── SHARED ACTIONS ───────────────────────────────────────────────────────────
+function toStep(i) { if (i <= S.step) { S.step = i; R(); } }
+function setTab(t) { S.tab = t; R(); }
+function toggleW(w) { S.expandedWeek = S.expandedWeek === w ? null : w; R(); }
+function uc(k, v) { S.course[k] = v; renderHeader(); }
+
+function addSlo() {
+  const inp = document.getElementById('slo-inp');
+  const val = (inp ? inp.value : S.sloInput).trim();
+  if (val) { S.slos.push(val); S.sloInput = ''; R(); }
+}
+function rmSlo(i) { S.slos.splice(i, 1); R(); }
+function editSlo(i, v) { S.slos[i] = v; }
+function rmFile(i) { S.files.splice(i, 1); R(); }
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function resetAll() {
+  S = {
+    step: 0,
+    catalog: S.catalog, // keep catalog cached
+    catalogLoading: false, catalogError: '',
+    selectedProgram: '', selectedCourse: '',
+    course: { title:'', code:'', creditHours:'3', weeks:'15', description:'', instructor:'', term:'', programId:'', courseId:'' },
+    slos: [], sloInput: '', slosFromCatalog: false,
+    files: [],
+    generating: false, genMsg: '', genInterval: null,
+    result: null, error: '', tab: 'schedule', expandedWeek: null
+  };
+  R();
+}
+
+function handleFiles(ev) {
+  const promises = Array.from(ev.target.files).map(f => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res({ name: f.name, size: f.size, b64: r.result.split(',')[1], id: Math.random() });
+    r.onerror = rej; r.readAsDataURL(f);
+  }));
+  Promise.all(promises).then(nf => { S.files = [...S.files, ...nf]; R(); });
+}
+
+// ── GENERATE ─────────────────────────────────────────────────────────────────
+async function generate() {
+  S.generating = true; S.error = ''; R();
+  const msgs = [
+    'Reading your uploaded materials…',
+    'Mapping content to learning outcomes…',
+    'Building week-by-week schedule…',
+    'Crafting discussion prompts…',
+    'Writing assessment prompts…',
+    'Finalizing your course structure…',
+  ];
+  let mi = 0; S.genMsg = msgs[0];
+  S.genInterval = setInterval(() => {
+    mi = (mi + 1) % msgs.length; S.genMsg = msgs[mi];
+    const el = document.getElementById('gen-msg');
+    if (el) el.textContent = S.genMsg;
+  }, 4000);
+
+  try {
+    const payload = {
+      course: S.course,
+      slos: S.slos,
+      files: S.files.map(f => ({ name: f.name, b64: f.b64 })),
+    };
+
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+
+    S.result = data;
+    S.step = 5; S.tab = 'schedule'; S.expandedWeek = 1;
+  } catch (err) {
+    S.error = err.message;
+    console.error(err);
+  } finally {
+    clearInterval(S.genInterval); S.generating = false; R();
+  }
+}
+
+// ── EXPORTS ──────────────────────────────────────────────────────────────────
+function dl(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function dlJSON() {
+  if (!S.result) return;
+  dl(new Blob([JSON.stringify({ course: S.course, slos: S.slos, ...S.result }, null, 2)], { type: 'application/json' }), `${S.course.code||'course'}-syllabus.json`);
+}
+
+function dlSyllabus() {
+  if (!S.result) return;
+  const r = S.result; const c = S.course;
+  const lines = [
+    'COURSE SYLLABUS', '═'.repeat(64), '',
+    c.title.toUpperCase(),
+    `Course Code: ${c.code}  |  Credits: ${c.creditHours}  |  Term: ${c.term}`,
+    `Instructor: ${c.instructor}`,
+    '', 'COURSE DESCRIPTION', '─'.repeat(40), c.description,
+    '', 'STUDENT LEARNING OUTCOMES', '─'.repeat(40),
+    ...S.slos.map((s, i) => `SLO ${i+1}: ${s}`),
+    '', 'GRADING STRUCTURE', '─'.repeat(40),
+    ...(r.grading||[]).map(g => `  ${g.category} (${g.weight}%): ${g.description}`),
+    '', 'COURSE SCHEDULE', '─'.repeat(40), '',
+    ...(r.schedule||[]).flatMap(w => [
+      `WEEK ${w.week}: ${w.title}`,
+      `Topics: ${(w.themes||[]).join(' | ')}`,
+      `Readings: ${(w.readings||[]).map(rd=>`${rd.source} — ${rd.section}`).join('; ')}`,
+      `Discussion: ${(w.discussions||[])[0]?.prompt||'TBD'}`,
+      '',
+    ]),
+    'MAJOR ASSESSMENTS', '─'.repeat(40), '',
+    ...(r.assessments||[]).flatMap(a => [
+      a.title,
+      `Type: ${a.type}  |  Due: Week ${a.dueWeek}  |  Weight: ${a.gradingWeight}%  |  Length: ${a.length}`,
+      `SLOs: ${(a.slos||[]).join(', ')}`, '',
+      a.fullPrompt, '', '─'.repeat(40), '',
+    ]),
+  ];
+  dl(new Blob([lines.join('\n')], { type: 'text/plain' }), `${c.code||'syllabus'}.txt`);
+}
+
+function dlCSV() {
+  if (!S.result) return;
+  const r = S.result;
+  const rows = [
+    ['Week','Item Title','Type','Description','SLO Alignment','Weight/Points','Format/Length'],
+    ...(r.schedule||[]).flatMap(w =>
+      (w.discussions||[]).map(d => [
+        w.week, `Week ${w.week} Discussion`, 'Discussion',
+        (d.prompt||'').slice(0,120), d.slo||'', '10 pts', d.format||'',
+      ])
+    ),
+    ...(r.assessments||[]).map(a => [
+      a.dueWeek, a.title, a.type,
+      (a.description||'').slice(0,120), (a.slos||[]).join('; '),
+      `${a.gradingWeight}%`, a.length||'',
+    ]),
+  ];
+  const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  dl(new Blob([csv], { type: 'text/csv' }), `${S.course.code||'course'}-populi.csv`);
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function e(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+R();
+</script>
+</body>
+</html>

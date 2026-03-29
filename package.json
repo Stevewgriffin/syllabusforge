@@ -1,0 +1,8 @@
+{
+  "name": "syllabusforge",
+  "version": "1.0.0",
+  "description": "SyllabusForge — Williamson College AI Course Builder",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0"
+  }
+}
