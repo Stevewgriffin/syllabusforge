@@ -328,7 +328,7 @@ function step1() {
   const ok = c.title.trim() && c.code.trim();
   return `<div class="card">
     <div class="card-title">Course Details</div>
-    <div class="card-hint">Pre-filled from the Williamson College catalog. Edit any field as needed — these appear on your Populi syllabus.</div>
+    <div class="card-hint">Pre-filled from the course catalog. The description is synthesized from your SLOs — edit it to match your official catalog text.</div>
     <div class="grid-2">
       <div class="field"><label>Course Title</label><input type="text" value="${e(c.title)}" placeholder="e.g. Essentials of Management" oninput="uc('title',this.value)"></div>
       <div class="field"><label>Course Code</label><input type="text" value="${e(c.code)}" placeholder="e.g. MGT 301" oninput="uc('code',this.value)"></div>
@@ -541,6 +541,20 @@ function selectCourse(id) {
   R();
 }
 
+function buildDescription(data) {
+  if (!data?.slos?.length) return '';
+  // Synthesize a catalog-style paragraph from the course SLOs
+  const slos = data.slos;
+  const verbs = slos.slice(0, 3).map(s => {
+    // Strip leading capital and trailing period, start with lowercase
+    return s.text.replace(/\.$/, '').replace(/^[A-Z]/, c => c.toLowerCase());
+  });
+  const rest = slos.length > 3
+    ? ` Additional outcomes include the ability to ${slos.slice(3).map(s => s.text.replace(/\.$/, '').replace(/^[A-Z]/, c => c.toLowerCase())).join(' and ')}.`
+    : '';
+  return `This ${data.credits}-credit course examines the foundational principles of ${data.title}. Students will ${verbs[0]}${verbs[1] ? ', ' + verbs[1] : ''}${verbs[2] ? ', and ' + verbs[2] : ''}.${rest}`;
+}
+
 function loadCourseAndAdvance() {
   if (!S.selectedCourse || !S.catalog) return;
   const { courseSlos, programs } = S.catalog;
@@ -554,7 +568,7 @@ function loadCourseAndAdvance() {
       code: data.code || '',
       creditHours: String(data.credits || 3),
       weeks: '15',
-      description: '',
+      description: buildDescription(data),
       instructor: '',
       term: '',
       programId: S.selectedProgram,
