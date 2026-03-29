@@ -328,7 +328,7 @@ function step1() {
   const ok = c.title.trim() && c.code.trim();
   return `<div class="card">
     <div class="card-title">Course Details</div>
-    <div class="card-hint">Pre-filled from the course catalog. The description is synthesized from your SLOs — edit it to match your official catalog text.</div>
+    <div class="card-hint">Pre-filled from the course catalog. Edit any field as needed — these appear on your Populi syllabus.</div>
     <div class="grid-2">
       <div class="field"><label>Course Title</label><input type="text" value="${e(c.title)}" placeholder="e.g. Essentials of Management" oninput="uc('title',this.value)"></div>
       <div class="field"><label>Course Code</label><input type="text" value="${e(c.code)}" placeholder="e.g. MGT 301" oninput="uc('code',this.value)"></div>
@@ -338,7 +338,7 @@ function step1() {
         <select onchange="uc('creditHours',this.value)">${[1,2,3,4,5,6].map(n=>`<option ${c.creditHours==n?'selected':''}>${n}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Number of Weeks</label>
-        <select onchange="uc('weeks',this.value)">${[4,6,7,8,10,12,14,15,16].map(n=>`<option ${c.weeks==n?'selected':''}>${n}</option>`).join('')}</select>
+        <select onchange="uc('weeks',this.value)">${[4,5,6,7,8,10,12,14,15,16].map(n=>`<option ${c.weeks==n?'selected':''}>${n}</option>`).join('')}</select>
       </div>
       <div class="field"><label>Term</label><input type="text" value="${e(c.term)}" placeholder="e.g. Fall 2025" oninput="uc('term',this.value)"></div>
     </div>
@@ -581,7 +581,7 @@ function loadCourseAndAdvance() {
 }
 
 // ── SHARED ACTIONS ───────────────────────────────────────────────────────────
-function toStep(i) { if (i <= S.step) { S.step = i; R(); } }
+function toStep(i) { S.step = i; R(); }
 function setTab(t) { S.tab = t; R(); }
 function toggleW(w) { S.expandedWeek = S.expandedWeek === w ? null : w; R(); }
 function uc(k, v) { S.course[k] = v; renderHeader(); }
