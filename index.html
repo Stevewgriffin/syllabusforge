@@ -568,7 +568,7 @@ function loadCourseAndAdvance() {
       code: data.code || '',
       creditHours: String(data.credits || 3),
       weeks: '15',
-      description: buildDescription(data),
+      description: data.description || buildDescription(data),
       instructor: '',
       term: '',
       programId: S.selectedProgram,
