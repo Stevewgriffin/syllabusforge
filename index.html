@@ -203,7 +203,7 @@ let S = {
   materialsList: '',
   // Generation
   generating: false, genMsg: '', genInterval: null,
-  result: null, error: '', tab: 'schedule', expandedWeek: null
+  result: null, error: '', tab: 'schedule', expandedWeek: null, editWeek: null
 };
 
 function R() { renderHeader(); renderProgress(); renderApp(); }
@@ -527,10 +527,12 @@ function step5() {
       <button class="tab-btn ${S.tab==='schedule'?'active':''}" onclick="setTab('schedule')">📅 Schedule</button>
       <button class="tab-btn ${S.tab==='assessments'?'active':''}" onclick="setTab('assessments')">📝 Assessments</button>
       <button class="tab-btn ${S.tab==='grading'?'active':''}" onclick="setTab('grading')">📊 Grading</button>
+      <button class="tab-btn ${S.tab==='syllabus'?'active':''}" onclick="setTab('syllabus')">📄 Full Syllabus</button>
     </div>
     ${S.tab==='schedule'?renderSched(r):''}
     ${S.tab==='assessments'?renderAssess(r):''}
     ${S.tab==='grading'?renderGrading(r):''}
+    ${S.tab==='syllabus'?renderSyllabusTab(r):''}
     <div style="text-align:center;margin-top:20px"><button class="btn-ghost" onclick="resetAll()">← Build Another Course</button></div>`;
 }
 
@@ -549,13 +551,142 @@ function renderSched(r) {
       ${open?`<div class="week-body">
         ${w.themes?.length?`<span class="sec-label">Topics</span><div class="tags-row">${w.themes.map(t=>`<span class="tag tag-navy">${e(t)}</span>`).join('')}</div>`:''}
         ${w.reading?`<span class="sec-label" style="margin-top:12px;display:block">Required Reading</span><div class="reading-item" style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:#F5F5FB;border-radius:6px;margin-top:4px"><span style="font-size:16px;flex-shrink:0">📖</span><span style="color:var(--navy);font-size:13px;line-height:1.5">${e(w.reading)}</span></div>`:''}
-        ${w.discussion?`<span class="sec-label" style="margin-top:12px;display:block">Discussion Question</span><div style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:#FDF8EF;border:1px solid #EDD8B5;border-radius:6px;margin-top:4px"><span style="font-size:16px;flex-shrink:0">💬</span><span style="color:#4A3010;font-size:13px;line-height:1.5;font-style:italic">${e(w.discussion)}</span></div>`:''}
+        ${w.discussion||S.editWeek===w.week?`<div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:4px"><span class="sec-label" style="display:inline">Discussion Question</span>${S.editWeek!==w.week?`<button onclick="S.editWeek=${w.week};R()" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--muted);padding:2px 6px;border-radius:4px;hover:background:#eee" title="Edit">✏️ Edit</button>`:''}</div>${S.editWeek===w.week?`<div style="margin-top:4px"><textarea id="dq-${w.week}" style="width:100%;border:1.5px solid var(--amber);border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px;background:#FDF8EF">${e(w.discussion||'')}</textarea><div style="display:flex;gap:8px;margin-top:6px"><button class="btn-primary" style="font-size:12px;padding:5px 14px" onclick="saveDiscussion(${w.week})">Save</button><button class="btn-ghost" style="font-size:12px;padding:5px 14px" onclick="S.editWeek=null;R()">Cancel</button></div></div>`:`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:#FDF8EF;border:1px solid #EDD8B5;border-radius:6px"><span style="font-size:16px;flex-shrink:0">💬</span><span style="color:#4A3010;font-size:13px;line-height:1.5;font-style:italic">${e(w.discussion)}</span></div>`}`:''}
         ${w.readings?.length?`<span class="sec-label">Additional Readings</span>${w.readings.map(rd=>`<div class="reading-item"><strong style="color:var(--navy)">${e(rd.source||'')}</strong> <span style="color:var(--muted)">— ${e(rd.section||'')}</span>${rd.focus?`<div style="font-size:12px;color:#9A9AAA;margin-top:2px;font-style:italic">${e(rd.focus)}</div>`:''}</div>`).join('')}`:''}
         ${w.discussions?.length?`<span class="sec-label" style="margin-top:14px;display:block">Discussion Prompts</span>${w.discussions.map(d=>`<div class="discussion-item"><div class="discussion-prompt">${e(d.prompt||'')}</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="tag tag-amber">${e(d.slo||'')}</span><span style="font-size:11px;color:#9A7A5A">${e(d.format||'')}</span></div></div>`).join('')}`:''}
         ${w.notes?`<div style="margin-top:10px;font-size:12px;color:var(--muted);font-style:italic">${e(w.notes)}</div>`:''}
       </div>`:''}
     </div>`;
   }).join('');
+}
+
+function renderSyllabusTab(r) {
+  const c = S.course;
+  const allFiles = [
+    S.syllabusDoc ? `📋 ${S.syllabusDoc.name} (current syllabus)` : null,
+    ...S.files.map(f => `${f.b64?'📄':'📝'} ${f.name}`),
+    ...(S.scraped?.books||[]).map(b => `📚 ${b}`),
+    ...(S.scraped?.fileNames||[]).map(n => `🔗 ${n} (Populi)`),
+  ].filter(Boolean);
+
+  return `<div class="card">
+    <div class="card-title">Full Syllabus Preview & Export</div>
+    <div class="card-hint">Review the complete syllabus, then print or save as PDF using your browser's Print dialog (File → Print → Save as PDF).</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      <button class="btn-primary" style="font-size:13px;padding:9px 20px" onclick="printSyllabus()">🖨️ Print / Save as PDF</button>
+      <button class="btn-export" style="background:#B8721D" onclick="dlSyllabus()">⬇ Download TXT</button>
+    </div>
+    ${allFiles.length?`<div style="margin-bottom:20px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#4A4A6A;margin-bottom:8px">Source Materials Used</div>
+      ${allFiles.map(f=>`<div style="font-size:13px;color:#4A4A6A;padding:5px 10px;background:#F5F2EC;border-radius:5px;margin-bottom:4px">${e(f)}</div>`).join('')}
+    </div>`:''}
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <div style="background:var(--navy);color:#fff;padding:12px 16px;font-size:13px;font-weight:600">📄 Syllabus Preview — ${e(c.title)} (${e(c.code)})</div>
+      <div style="padding:16px;font-size:13px;color:#2A2A4A;line-height:1.8">
+        <strong>Course:</strong> ${e(c.title)} · ${e(c.code)} · ${c.creditHours} credits · ${c.weeks} weeks · ${e(c.term)}<br>
+        <strong>Instructor:</strong> ${e(c.instructor||'TBD')}<br><br>
+        <strong>Description:</strong> ${e(c.description||'')}<br><br>
+        <strong>Student Learning Outcomes:</strong><br>
+        ${S.slos.map((s,i)=>`${i+1}. ${e(s)}`).join('<br>')}<br><br>
+        <strong>Course Schedule:</strong><br>
+        ${(r.schedule||[]).map(w=>`<div style="margin:6px 0;padding:8px;background:#FAFAF5;border-radius:4px"><strong>Week ${w.week}:</strong> ${e(w.title)} — ${e(w.topic)}<br><span style="color:#8A5510">📖 ${e(w.reading||'')}</span>${w.discussion?`<br><span style="color:#4A4A6A;font-style:italic">💬 ${e(w.discussion)}</span>`:''}<br><span style="color:var(--muted);font-size:11px">${e(w.slo||'')}</span></div>`).join('')}
+        <br><strong>Assessments:</strong><br>
+        ${(r.assessments||[]).map(a=>`<div style="margin:5px 0"><strong>${e(a.title)}</strong> — Due Week ${a.dueWeek} · ${a.gradingWeight}% · ${e(a.length||'')}<br>${e(a.description||'')}</div>`).join('')}
+        <br><strong>Grading:</strong><br>
+        ${(r.grading||[]).map(g=>`${e(g.category)}: ${g.weight}%`).join(' · ')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function printSyllabus() {
+  const r = S.result; const c = S.course;
+  if (!r) return;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${c.title} Syllabus</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Georgia', serif; font-size: 11pt; color: #111; background: #fff; padding: 0.6in 0.75in; max-width: 8.5in; margin: 0 auto; }
+    @media print { body { padding: 0; } .no-print { display: none; } }
+    h1 { font-size: 18pt; color: #1E2D4A; text-align: center; margin-bottom: 4px; }
+    h2 { font-size: 13pt; color: #B8721D; text-align: center; border-bottom: 2px solid #B8721D; padding-bottom: 4px; margin: 22px 0 10px; }
+    h3 { font-size: 11pt; color: #1E2D4A; margin: 14px 0 5px; }
+    p, li { line-height: 1.65; margin-bottom: 6px; }
+    ol { padding-left: 22px; }
+    .header-block { text-align: center; border-bottom: 3px double #1E2D4A; padding-bottom: 14px; margin-bottom: 18px; }
+    .wc-logo { font-size: 28pt; font-weight: 900; color: #1E2D4A; letter-spacing: -1px; }
+    .wc-sub { font-size: 8pt; letter-spacing: 3px; color: #B8721D; text-transform: uppercase; }
+    .course-meta { font-size: 10pt; color: #444; margin-top: 8px; }
+    .mission { font-size: 9pt; font-style: italic; color: #555; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10pt; }
+    th { background: #1E2D4A; color: #fff; padding: 6px 8px; text-align: left; font-size: 9pt; }
+    td { border: 1px solid #ccc; padding: 5px 8px; vertical-align: top; }
+    tr:nth-child(even) td { background: #F8F6F2; }
+    .reading { color: #8A5510; font-style: italic; }
+    .discussion { color: #2A4A2A; font-size: 9.5pt; }
+    .slo-tag { font-size: 8.5pt; color: #555; }
+    .grade-table td:first-child { font-weight: bold; width: 40%; }
+    .grade-table td:nth-child(2) { width: 12%; text-align: center; font-weight: bold; color: #B8721D; }
+    .policy { font-size: 10pt; line-height: 1.6; margin-bottom: 10px; }
+    .print-btn { background:#1E2D4A;color:#fff;border:none;padding:10px 24px;border-radius:6px;font-size:12pt;cursor:pointer;margin-bottom:20px; }
+  </style></head><body>
+  <div class="no-print" style="text-align:center;margin-bottom:20px">
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+    <div style="font-size:10pt;color:#666;margin-top:6px">In the print dialog, choose "Save as PDF" to get a PDF file.</div>
+  </div>
+  <div class="header-block">
+    <div class="wc-logo">WC</div>
+    <div class="wc-sub">Williamson College</div>
+    <div style="margin-top:12px;font-size:9pt;letter-spacing:1px;color:#888">2026 Syllabus</div>
+    <h1 style="margin-top:8px">${e(c.title)}</h1>
+    <div class="course-meta">${e(c.code)} &nbsp;·&nbsp; ${c.creditHours} Credit Hours &nbsp;·&nbsp; ${c.weeks} Weeks &nbsp;·&nbsp; ${e(c.term||'')}</div>
+    ${c.instructor?`<div class="course-meta"><strong>Instructor:</strong> ${e(c.instructor)}</div>`:''}
+    <div class="mission"><em>Williamson College creates a rigorous academic environment to equip and empower graduates to be on mission in the world for Christ</em></div>
+  </div>
+
+  <h2>Course Description</h2>
+  <p>${e(c.description||'')}</p>
+
+  <h2>Student Learning Outcomes</h2>
+  <p><strong>Upon completion of this course, the learner should be able to:</strong></p>
+  <ol>${S.slos.map(s=>`<li>${e(s)}</li>`).join('')}</ol>
+
+  <h2>Course Schedule</h2>
+  <table>
+    <tr><th style="width:7%">Week</th><th style="width:20%">Title</th><th style="width:28%">Topic</th><th style="width:25%">Required Reading</th><th style="width:12%">SLO</th></tr>
+    ${(r.schedule||[]).map(wk=>`<tr>
+      <td style="text-align:center;font-weight:bold">${wk.week}</td>
+      <td><strong>${e(wk.title||'')}</strong>${wk.discussion?`<div class="discussion">💬 ${e(wk.discussion)}</div>`:''}</td>
+      <td>${e(wk.topic||'')}</td>
+      <td class="reading">${e(wk.reading||'')}</td>
+      <td class="slo-tag">${e(wk.slo||'')}</td>
+    </tr>`).join('')}
+  </table>
+
+  <h2>Written Assignments</h2>
+  ${(r.assessments||[]).map(a=>`<div style="margin-bottom:12px"><h3>${e(a.title)}</h3>
+    <p><strong>Type:</strong> ${e(a.type)} &nbsp;·&nbsp; <strong>Due:</strong> Week ${a.dueWeek} &nbsp;·&nbsp; <strong>Weight:</strong> ${a.gradingWeight}% &nbsp;·&nbsp; <strong>Length:</strong> ${e(a.length||'')}</p>
+    <p><strong>SLOs:</strong> ${(a.slos||[]).join(', ')}</p>
+    <p>${e(a.description||'')}</p>
+    <p><em>Prompt:</em> ${e(a.fullPrompt||'')}</p>
+  </div>`).join('')}
+
+  <h2>Student Evaluation / Grading Structure</h2>
+  <table class="grade-table">
+    <tr><th>Category</th><th>Weight</th><th>Description</th></tr>
+    ${(r.grading||[]).map(g=>`<tr><td>${e(g.category||'')}</td><td>${g.weight||0}%</td><td>${e(g.description||'')}</td></tr>`).join('')}
+  </table>
+
+  <h2>Attendance Policy</h2>
+  <p class="policy">Students are expected to attend every session. Any class missed must be made up in some manner. The student is obligated to contact the instructor to make suitable arrangements in case of any absence or tardiness. Unexcused absences in two (2) class periods will result in a course grade of "F" with no tuition refund.</p>
+
+  <h2>Academic Integrity</h2>
+  <p class="policy">Students at Williamson College are expected to maintain academic integrity consistent with both biblical truth and accepted protocol in higher education. Students will not participate in cheating, plagiarism, or any other form of academic dishonesty. All academic work submitted must be the student's original work, properly cited in APA format.</p>
+
+  <h2>Paper Submission Guidelines</h2>
+  <p class="policy">All papers should be double-spaced, written in APA style, and submitted in Microsoft Word or PDF format (not Pages) via Populi. Include the student's name, course name, instructor's name, and date submitted.</p>
+  </body></html>`);
+  w.document.close();
 }
 
 function renderAssess(r) {
@@ -784,6 +915,14 @@ function addSlo() {
 function rmSlo(i) { S.slos.splice(i, 1); R(); }
 function editSlo(i, v) { S.slos[i] = v; }
 function rmFile(i) { S.files.splice(i, 1); R(); }
+function saveDiscussion(week) {
+  const el = document.getElementById(`dq-${week}`);
+  if (el && S.result) {
+    const w = S.result.schedule.find(w => w.week === week);
+    if (w) w.discussion = el.value.trim();
+  }
+  S.editWeek = null; R();
+}
 
 function autoResize(el) {
   el.style.height = 'auto';
