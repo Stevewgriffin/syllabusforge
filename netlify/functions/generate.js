@@ -46,7 +46,36 @@ exports.handler = async (event) => {
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('AI response did not contain a valid JSON structure.');
 
-    const result = JSON.parse(match[0]);
+    const raw = JSON.parse(match[0]);
+
+    // Expand compact key names back to full field names expected by the frontend
+    const result = {
+      grading: (raw.grading || []).map(g => ({
+        category: g.category || g.c || '',
+        weight: g.weight ?? g.w ?? 0,
+        description: g.description || g.d || '',
+        slos: g.slos || g.s || [],
+      })),
+      schedule: (raw.schedule || []).map(w => ({
+        week: w.week ?? w.n ?? 0,
+        title: w.title || w.t || '',
+        topic: w.topic || w.k || '',
+        slo: w.slo || w.o || '',
+        themes: w.themes || (w.topic || w.k ? [w.topic || w.k] : []),
+        readings: w.readings || [],
+        discussions: w.discussions || [],
+      })),
+      assessments: (raw.assessments || []).map(a => ({
+        title: a.title || a.t || '',
+        type: a.type || a.y || 'paper',
+        dueWeek: a.dueWeek ?? a.w ?? 0,
+        description: a.description || a.d || '',
+        fullPrompt: a.fullPrompt || a.p || '',
+        length: a.length || a.l || '',
+        slos: a.slos || a.s || [],
+        gradingWeight: a.gradingWeight ?? a.g ?? 0,
+      })),
+    };
 
     return {
       statusCode: 200,
@@ -70,25 +99,19 @@ function buildPrompt(course, slos, fileCount) {
       ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges for reading assignments.'
       : "No materials uploaded — generate plausible, academically rigorous readings grounded in the course subject matter and Williamson College's Christian higher education mission.";
 
-  return `You are a curriculum designer for Williamson College (Christ-centered). Generate a concise course structure.
+  // Trim description to 100 chars to reduce input tokens
+  const desc = (course.description || '').slice(0, 100);
+  // Trim SLOs to 60 chars each
+  const trimmedSlos = slos.map((s, i) => `SLO ${i + 1}: ${s.slice(0, 60)}`).join('\n');
 
-COURSE: ${course.title} (${course.code}) | ${course.creditHours} credits | ${course.weeks} weeks | ${course.term || 'Current Term'}
-DESCRIPTION: ${course.description || '(derive from title and SLOs)'}
-SLOs:
-${sloList}
+  return `Curriculum designer for Williamson College. Output ONLY JSON, no prose.
 
-${materialNote}
+${course.title}|${course.code}|${course.weeks}wk|${course.creditHours}cr|${course.term || 'Current Term'}
+${desc}
+${trimmedSlos}
 
-Return ONLY valid JSON — no markdown, no explanation:
-{
-  "grading": [{"category":"string","weight":number,"description":"1 sentence","slos":["SLO 1"]}],
-  "schedule": [{"week":number,"title":"string (4 words)","topic":"string (8 words max)","slo":"SLO X"}],
-  "assessments": [{"title":"string","type":"paper|quiz|project","dueWeek":number,"description":"string (1 sentence)","fullPrompt":"string (30 words)","length":"string","slos":["SLO X"],"gradingWeight":number}]
-}
+JSON schema (copy exactly, fill values):
+{"grading":[{"c":"category name","w":number,"d":"one phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"3-word title","k":"5-word topic","o":"SLO X"}],"assessments":[{"t":"title","y":"paper","w":number,"d":"one sentence","p":"25-word prompt","l":"pages/length","s":["SLO X"],"g":number}]}
 
-Strict rules:
-- ALL ${course.weeks} weeks in schedule
-- 3 assessments; at least one faith reflection
-- Grading weights sum to 100
-- MAXIMUM BREVITY — short phrases only, no padding`;
+Rules: ${course.weeks} entries in schedule n=1..${course.weeks}. 3 assessments. grading w values sum=100. ALL strings ultra-short.`;
 }
