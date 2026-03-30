@@ -33,7 +33,8 @@ exports.handler = async (event) => {
       });
     }
 
-    // Additional PDFs (textbooks, articles, etc.)
+    // Additional files: PDFs as native documents, text-extracted files appended to prompt
+    const textFiles = [];
     for (const f of files) {
       if (f.b64) {
         content.push({
@@ -41,10 +42,12 @@ exports.handler = async (event) => {
           source: { type: 'base64', media_type: 'application/pdf', data: f.b64 },
           title: f.name || 'uploaded document',
         });
+      } else if (f.text) {
+        textFiles.push(f);
       }
     }
 
-    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped, materialsList, syllabusDoc) });
+    content.push({ type: 'text', text: buildPrompt(course, slos, files.filter(f=>f.b64).length, scraped, materialsList, syllabusDoc, textFiles) });
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
@@ -111,7 +114,7 @@ exports.handler = async (event) => {
   }
 };
 
-function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDoc) {
+function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDoc, textFiles = []) {
   const trimmedSlos = slos.map((s, i) => `SLO ${i + 1}: ${s.slice(0, 70)}`).join('\n');
   const desc = (course.description || '').slice(0, 120);
 
@@ -124,6 +127,9 @@ function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDo
   if (scraped?.books?.length) matParts.push(`Populi books: ${scraped.books.slice(0, 8).join('; ')}`);
   if (scraped?.lessons?.length) matParts.push(`Populi weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
   if (fileCount > 0) matParts.push(`${fileCount} PDF(s) uploaded — extract chapter titles and page ranges for readings.`);
+  for (const f of textFiles) {
+    matParts.push(`UPLOADED FILE: ${f.name}\n${f.text.slice(0, 3000)}`);
+  }
   const matContext = matParts.length ? matParts.join('\n') : 'No materials provided — use plausible academic readings for this subject.';
 
   const task = hasSyllabus

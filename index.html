@@ -453,14 +453,18 @@ YouTube: NT Wright on Galatians (Week 9)" style="min-height:110px" oninput="S.ma
 
     ${scrapedBar}
 
-    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Additional PDFs <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Claude reads full content)</span></div>
+    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Course Materials <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Claude reads full content)</span></div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
       <div style="font-size:24px;margin-bottom:6px">📚</div>
-      <div style="font-weight:600;color:var(--navy);font-size:13px;margin-bottom:2px">Drop PDFs here or click to browse</div>
-      <div style="font-size:12px;color:var(--muted)">Textbooks · Articles · Course packets</div>
+      <div style="font-weight:600;color:var(--navy);font-size:13px;margin-bottom:2px">Drop files here or click to browse</div>
+      <div style="font-size:12px;color:var(--muted)">PDF · Word (.docx) · PowerPoint (.pptx) · Excel (.xlsx) · TXT</div>
     </div>
-    <input id="fi" type="file" accept=".pdf" multiple style="display:none" onchange="handleFiles(event)">
-    ${S.files.map((f,i)=>`<div class="file-item"><span style="font-size:18px">📄</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`).join('')}
+    <input id="fi" type="file" accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.csv" multiple style="display:none" onchange="handleFiles(event)">
+    ${S.files.map((f,i)=>{
+      const icon = f.b64 ? '📄' : f.name.match(/\.(pptx?)/i) ? '📊' : f.name.match(/\.(xlsx?|csv)/i) ? '📈' : f.name.match(/\.(docx?)/i) ? '📝' : '📃';
+      const meta = f.b64 ? `${(f.size/1024/1024).toFixed(2)} MB · PDF` : `${Math.round((f.text||'').length/1000)}k chars extracted`;
+      return `<div class="file-item"><span style="font-size:18px">${icon}</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${meta}</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`;
+    }).join('')}
     ${!sd && !sc && S.files.length===0 && !S.materialsList.trim()
       ? `<div class="notice notice-warn" style="margin-top:12px">⚠ Upload your current syllabus to get the most accurate output — or add materials manually above.</div>` : ''}
     <div class="nav">
@@ -766,13 +770,57 @@ function resetAll() {
   R();
 }
 
-function handleFiles(ev) {
-  const promises = Array.from(ev.target.files).map(f => new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res({ name: f.name, size: f.size, b64: r.result.split(',')[1], id: Math.random() });
-    r.onerror = rej; r.readAsDataURL(f);
-  }));
-  Promise.all(promises).then(nf => { S.files = [...S.files, ...nf]; R(); });
+async function handleFiles(ev) {
+  const newFiles = [];
+  for (const file of Array.from(ev.target.files)) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    try {
+      if (ext === 'pdf') {
+        const b64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result.split(',')[1]);
+          r.onerror = rej; r.readAsDataURL(file);
+        });
+        newFiles.push({ name: file.name, size: file.size, b64, id: Math.random() });
+
+      } else if (ext === 'docx' || ext === 'doc') {
+        const buf = await file.arrayBuffer();
+        if (typeof mammoth === 'undefined') { alert('Word parser not ready — try again.'); continue; }
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
+        newFiles.push({ name: file.name, size: file.size, text: result.value.slice(0, 10000), id: Math.random() });
+
+      } else if (ext === 'pptx' || ext === 'ppt') {
+        const buf = await file.arrayBuffer();
+        if (typeof JSZip === 'undefined') { alert('PowerPoint parser not ready — try again.'); continue; }
+        const zip = await JSZip.loadAsync(buf);
+        const slideFiles = Object.keys(zip.files).filter(n => n.match(/ppt\/slides\/slide\d+\.xml/)).sort();
+        const texts = [];
+        for (const sf of slideFiles.slice(0, 50)) {
+          const xml = await zip.files[sf].async('string');
+          const t = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          if (t) texts.push(t);
+        }
+        newFiles.push({ name: file.name, size: file.size, text: texts.join('\n').slice(0, 10000), id: Math.random() });
+
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const buf = await file.arrayBuffer();
+        if (typeof XLSX === 'undefined') { alert('Excel parser not ready — try again.'); continue; }
+        const wb = XLSX.read(buf, { type: 'array' });
+        const allSheets = wb.SheetNames.map(n => `--- ${n} ---\n${XLSX.utils.sheet_to_csv(wb.Sheets[n])}`).join('\n\n');
+        newFiles.push({ name: file.name, size: file.size, text: allSheets.slice(0, 10000), id: Math.random() });
+
+      } else if (ext === 'txt' || ext === 'csv') {
+        const text = await file.text();
+        newFiles.push({ name: file.name, size: file.size, text: text.slice(0, 10000), id: Math.random() });
+
+      } else {
+        alert(`Unsupported file type: .${ext}\nSupported: PDF, Word, PowerPoint, Excel, TXT, CSV`);
+      }
+    } catch(err) {
+      alert(`Could not read ${file.name}: ${err.message}`);
+    }
+  }
+  S.files = [...S.files, ...newFiles]; R();
 }
 
 // ── GENERATE ─────────────────────────────────────────────────────────────────
@@ -797,7 +845,7 @@ async function generate() {
     const payload = {
       course: S.course,
       slos: S.slos,
-      files: S.files.map(f => ({ name: f.name, b64: f.b64 })),
+      files: S.files.map(f => ({ name: f.name, b64: f.b64 || null, text: f.text || null })),
       scraped: S.scraped ? {
         books: S.scraped.books || [],
         lessons: S.scraped.lessons || [],
