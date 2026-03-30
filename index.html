@@ -192,6 +192,8 @@ let S = {
   slosFromCatalog: false,
   // Files
   files: [],
+  // Populi scraper import
+  scraped: null,
   // Generation
   generating: false, genMsg: '', genInterval: null,
   result: null, error: '', tab: 'schedule', expandedWeek: null
@@ -386,13 +388,31 @@ function step2() {
 
 // ── STEP 3: MATERIALS ────────────────────────────────────────────────────────
 function step3() {
+  const sc = S.scraped;
+  const scrapedSection = sc ? `
+    <div class="notice notice-success" style="margin-bottom:16px">
+      <div style="font-weight:600;margin-bottom:6px">✓ Populi content imported — ${e(sc.courseHint?.title||'Course')}</div>
+      ${sc.books?.length ? `<div style="font-size:13px;margin-bottom:4px"><strong>Books (${sc.books.length}):</strong> ${sc.books.slice(0,3).map(b=>e(b)).join(' · ')}${sc.books.length>3?' · …':''}</div>` : ''}
+      ${sc.lessons?.length ? `<div style="font-size:13px;margin-bottom:4px"><strong>Lessons/Weeks (${sc.lessons.length}):</strong> ${sc.lessons.slice(0,3).map(l=>e(l)).join(' · ')}${sc.lessons.length>3?' · …':''}</div>` : ''}
+      <button class="btn-sm" style="margin-top:6px" onclick="S.scraped=null;R()">✕ Remove import</button>
+    </div>` : `
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Import from Populi</div>
+      <div style="display:flex;gap:10px;align-items:center;padding:14px;background:var(--navy-light);border:1.5px dashed #B3C5DF;border-radius:8px;cursor:pointer" onclick="document.getElementById('sfi').click()">
+        <span style="font-size:22px">🔗</span>
+        <div>
+          <div style="font-weight:600;color:var(--navy);font-size:13px">Import syllabusforge-import.json</div>
+          <div style="font-size:12px;color:var(--muted)">Export from the <a href="/scraper.html" target="_blank" style="color:var(--amber)">Populi Scraper</a> — brings in books, articles, lesson structure</div>
+        </div>
+      </div>
+      <input id="sfi" type="file" accept=".json" style="display:none" onchange="importScraped(event)">
+    </div>`;
+
   return `<div class="card">
     <div class="card-title">Course Materials</div>
-    <div class="card-hint">Upload textbooks and readings as PDFs. Claude extracts chapter titles, key concepts, and page ranges to build a reading schedule grounded in your actual materials.</div>
-    <div class="notice" style="background:var(--navy-light);border-color:#B3C5DF;margin-bottom:18px">
-      <strong style="color:var(--navy)">Importing from Populi?</strong>
-      <span style="color:#4A4A6A"> Use the <a href="/scraper.html" style="color:var(--amber);font-weight:600">Populi Scraper tool</a> to extract your existing course content and import it here.</span>
-    </div>
+    <div class="card-hint">Import your existing Populi course content, then optionally upload PDFs. Claude uses both to build a grounded, chapter-specific syllabus.</div>
+    ${scrapedSection}
+    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">PDF Materials</div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
       <div style="font-size:28px;margin-bottom:8px">📚</div>
       <div style="font-weight:600;color:var(--navy);font-size:14px;margin-bottom:3px">Drop PDFs here or click to browse</div>
@@ -400,9 +420,9 @@ function step3() {
     </div>
     <input id="fi" type="file" accept=".pdf" multiple style="display:none" onchange="handleFiles(event)">
     ${S.files.map((f,i)=>`<div class="file-item"><span style="font-size:18px">📄</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`).join('')}
-    ${S.files.length===0
-      ? `<div class="notice notice-warn">⚠ No materials uploaded — Claude will still generate a course from your description and SLOs, but readings will be representative rather than chapter-specific.</div>`
-      : `<div class="notice notice-success">✓ ${S.files.length} document${S.files.length>1?'s':''} ready — Claude will extract real chapter content and page ranges</div>`}
+    ${!sc && S.files.length===0
+      ? `<div class="notice notice-warn" style="margin-top:12px">⚠ No materials yet — import from Populi or upload PDFs so Claude can build a grounded reading schedule.</div>`
+      : S.files.length>0 ? `<div class="notice notice-success" style="margin-top:12px">✓ ${S.files.length} PDF${S.files.length>1?'s':''} ready</div>` : ''}
     <div class="nav">
       <button class="btn-ghost" onclick="toStep(2)">← Back</button>
       <button class="btn-primary" onclick="toStep(4)">Next: Review & Generate →</button>
@@ -588,6 +608,24 @@ function loadCourseAndAdvance() {
   S.step = 1; R();
 }
 
+function importScraped(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (data._type !== 'syllabusforge-import') {
+        alert('This doesn\'t look like a SyllabusForge import file. Use the Populi Scraper to generate one.');
+        return;
+      }
+      S.scraped = data;
+      R();
+    } catch { alert('Could not read file — make sure it\'s a valid JSON file from the Populi Scraper.'); }
+  };
+  reader.readAsText(file);
+}
+
 // ── SHARED ACTIONS ───────────────────────────────────────────────────────────
 function toStep(i) { S.step = i; R(); }
 function setTab(t) { S.tab = t; R(); }
@@ -655,6 +693,12 @@ async function generate() {
       course: S.course,
       slos: S.slos,
       files: S.files.map(f => ({ name: f.name, b64: f.b64 })),
+      scraped: S.scraped ? {
+        books: S.scraped.books || [],
+        lessons: S.scraped.lessons || [],
+        description: S.scraped.courseHint?.description || '',
+        fileNames: S.scraped.fileNames || [],
+      } : null,
     };
 
     const res = await fetch('/api/generate', {

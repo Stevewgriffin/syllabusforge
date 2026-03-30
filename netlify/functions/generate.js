@@ -9,7 +9,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { course, slos, files = [] } = JSON.parse(event.body || '{}');
+    const { course, slos, files = [], scraped = null } = JSON.parse(event.body || '{}');
 
     if (!course || !slos?.length) {
       return {
@@ -34,7 +34,7 @@ exports.handler = async (event) => {
       }
     }
 
-    content.push({ type: 'text', text: buildPrompt(course, slos, files.length) });
+    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped) });
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
@@ -92,12 +92,19 @@ exports.handler = async (event) => {
   }
 };
 
-function buildPrompt(course, slos, fileCount) {
+function buildPrompt(course, slos, fileCount, scraped) {
   const sloList = slos.map((s, i) => `SLO ${i + 1}: ${s}`).join('\n');
-  const materialNote =
-    fileCount > 0
-      ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges for reading assignments.'
-      : "No materials uploaded — generate plausible, academically rigorous readings grounded in the course subject matter and Williamson College's Christian higher education mission.";
+  let materialNote = fileCount > 0
+    ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges.'
+    : 'No PDFs uploaded — generate plausible readings grounded in the subject matter.';
+
+  if (scraped) {
+    const parts = [];
+    if (scraped.books?.length) parts.push(`Required books: ${scraped.books.slice(0, 8).join('; ')}`);
+    if (scraped.lessons?.length) parts.push(`Existing weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
+    if (scraped.fileNames?.length) parts.push(`Course files: ${scraped.fileNames.slice(0, 6).join(', ')}`);
+    if (parts.length) materialNote += `\nIMPORT FROM POPULI — use these in the schedule: ${parts.join(' | ')}`;
+  }
 
   // Trim description to 100 chars to reduce input tokens
   const desc = (course.description || '').slice(0, 100);
