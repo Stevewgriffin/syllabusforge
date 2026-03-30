@@ -70,39 +70,31 @@ function buildPrompt(course, slos, fileCount) {
       ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges for reading assignments.'
       : "No materials uploaded — generate plausible, academically rigorous readings grounded in the course subject matter and Williamson College's Christian higher education mission.";
 
-  return `You are an expert curriculum designer for Williamson College, a Christ-centered institution of higher education. Create a complete, detailed course structure that integrates faith with learning.
+  return `You are a curriculum designer for Williamson College (Christ-centered). Generate a concise course structure.
 
-COURSE INFORMATION:
-- Title: ${course.title}
-- Code: ${course.code}
-- Credit Hours: ${course.creditHours}
-- Weeks: ${course.weeks}
-- Term: ${course.term || 'Current Term'}
-- Instructor: ${course.instructor || 'TBD'}
-- Description: ${course.description || '(None provided — derive from course title and SLOs)'}
-
-STUDENT LEARNING OUTCOMES:
+COURSE: ${course.title} (${course.code}) | ${course.creditHours} credits | ${course.weeks} weeks | ${course.term || 'Current Term'}
+DESCRIPTION: ${course.description || '(derive from title and SLOs)'}
+SLOs:
 ${sloList}
 
 ${materialNote}
 
-Return ONLY valid JSON (no markdown, no code blocks, no explanation) with this exact structure:
+Return ONLY valid JSON — no markdown, no explanation:
 {
-  "grading": [{"category":"string","weight":number,"description":"string","slos":["SLO 1"]}],
+  "grading": [{"category":"string","weight":number,"description":"1 sentence","slos":["SLO 1"]}],
   "schedule": [{
     "week":number,
-    "title":"string",
-    "themes":["string"],
-    "notes":"string",
-    "readings":[{"source":"string","section":"string","focus":"string"}],
-    "discussions":[{"prompt":"string (2-3 full sentences)","slo":"SLO X","format":"Initial post (300 words) + 2 replies (150 words each)"}]
+    "title":"string (5 words max)",
+    "themes":["string","string"],
+    "readings":[{"source":"string","section":"string"}],
+    "discussions":[{"prompt":"string (1-2 sentences)","slo":"SLO X"}]
   }],
   "assessments": [{
     "title":"string",
-    "type":"paper",
+    "type":"paper|quiz|project",
     "dueWeek":number,
-    "description":"string (2 sentences)",
-    "fullPrompt":"string (complete instructions, 100-150 words)",
+    "description":"1-2 sentences",
+    "fullPrompt":"string (60-80 words)",
     "length":"string",
     "slos":["SLO X"],
     "gradingWeight":number
@@ -110,9 +102,8 @@ Return ONLY valid JSON (no markdown, no code blocks, no explanation) with this e
 }
 
 Rules:
-- Include ALL ${course.weeks} weeks in the schedule array (week 1 through ${course.weeks})
-- Include 2-4 major assessments; at least one should require written reflection integrating faith and learning
-- Grading weights must sum to exactly 100
-- Each discussion prompt should be substantive and academically challenging
-- Reading assignments should be realistic for a ${course.creditHours}-credit course`;
+- ALL ${course.weeks} weeks in schedule (week 1 through ${course.weeks})
+- 2-4 assessments; at least one faith-integration reflection
+- Grading weights sum to exactly 100
+- Keep all strings SHORT — brevity is required`;
 }
