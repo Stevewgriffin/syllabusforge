@@ -38,7 +38,7 @@ exports.handler = async (event) => {
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 6000,
+      max_tokens: 3000,
       messages: [{ role: 'user', content }],
     });
 
@@ -82,28 +82,13 @@ ${materialNote}
 Return ONLY valid JSON — no markdown, no explanation:
 {
   "grading": [{"category":"string","weight":number,"description":"1 sentence","slos":["SLO 1"]}],
-  "schedule": [{
-    "week":number,
-    "title":"string (5 words max)",
-    "themes":["string","string"],
-    "readings":[{"source":"string","section":"string"}],
-    "discussions":[{"prompt":"string (1-2 sentences)","slo":"SLO X"}]
-  }],
-  "assessments": [{
-    "title":"string",
-    "type":"paper|quiz|project",
-    "dueWeek":number,
-    "description":"1-2 sentences",
-    "fullPrompt":"string (60-80 words)",
-    "length":"string",
-    "slos":["SLO X"],
-    "gradingWeight":number
-  }]
+  "schedule": [{"week":number,"title":"string","topic":"string","reading":"string","discussion":"string (1 sentence)","slo":"SLO X"}],
+  "assessments": [{"title":"string","type":"paper|quiz|project","dueWeek":number,"description":"string","fullPrompt":"string (50 words)","length":"string","slos":["SLO X"],"gradingWeight":number}]
 }
 
 Rules:
 - ALL ${course.weeks} weeks in schedule (week 1 through ${course.weeks})
-- 2-4 assessments; at least one faith-integration reflection
+- 3-4 assessments; at least one faith-integration reflection
 - Grading weights sum to exactly 100
-- Keep all strings SHORT — brevity is required`;
+- BE CONCISE — every field one short phrase or sentence`;
 }
