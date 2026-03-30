@@ -113,5 +113,5 @@ ${trimmedSlos}
 JSON schema (copy exactly, fill values):
 {"grading":[{"c":"category name","w":number,"d":"one phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"3-word title","k":"5-word topic","o":"SLO X"}],"assessments":[{"t":"title","y":"paper","w":number,"d":"one sentence","p":"25-word prompt","l":"pages/length","s":["SLO X"],"g":number}]}
 
-Rules: ${course.weeks} entries in schedule n=1..${course.weeks}. 3 assessments. grading w values sum=100. ALL strings ultra-short.`;
+Rules: ${course.weeks} entries in schedule n=1..${course.weeks}. 3 assessments with dueWeek between 5 and ${course.weeks}. grading w values sum=100. ALL strings ultra-short.`;
 }
