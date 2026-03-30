@@ -2,8 +2,6 @@
   publish = "."
   functions = "netlify/functions"
 
-[functions]
-  timeout = 26
 
 [[redirects]]
   from = "/api/catalog"
