@@ -48,15 +48,23 @@ exports.handler = async (event) => {
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 1500,
+      max_tokens: 3000,
+      system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences. Never truncate.',
       messages: [{ role: 'user', content }],
     });
 
     const text = message.content.map((b) => b.text || '').join('');
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('AI response did not contain a valid JSON structure.');
 
-    const raw = JSON.parse(match[0]);
+    // Extract outermost balanced {} block
+    const start = text.indexOf('{');
+    if (start === -1) throw new Error('AI response did not contain a valid JSON structure.');
+    let depth = 0, end = -1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) throw new Error('AI response JSON was truncated — please try again.');
+    const raw = JSON.parse(text.slice(start, end + 1));
 
     // Expand compact key names back to full field names expected by the frontend
     const result = {
