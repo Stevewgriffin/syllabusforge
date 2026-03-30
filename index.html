@@ -773,9 +773,17 @@ function loadCourseAndAdvance() {
   const prog = programs.find(p => p.id === S.selectedProgram);
   const courseInProg = prog?.courses.find(c => c.id === S.selectedCourse);
 
-  // Always reset SLOs so a previously loaded course never bleeds into the new selection
+  // Clear ALL prior course data so nothing bleeds into the new selection
   S.slos = [];
   S.slosFromCatalog = false;
+  S.files = [];
+  S.syllabusDoc = null;
+  S.scraped = null;
+  S.materialsList = '';
+  S.result = null;
+  S.error = '';
+  S.editWeek = null;
+  S.expandedWeek = null;
 
   if (data) {
     S.course = {
