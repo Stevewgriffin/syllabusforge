@@ -33,21 +33,20 @@ exports.handler = async (event) => {
       });
     }
 
-    // Additional files: PDFs as native documents, text-extracted files appended to prompt
+    // Additional files:
+    // - PDFs: list filenames only in prompt (sending 20+ PDFs as native docs overflows context)
+    // - Text-extracted files (DOCX, PPTX, XLSX, TXT): include extracted content in prompt
     const textFiles = [];
+    const pdfFileNames = [];
     for (const f of files) {
       if (f.b64) {
-        content.push({
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: f.b64 },
-          title: f.name || 'uploaded document',
-        });
+        pdfFileNames.push(f.name);
       } else if (f.text) {
         textFiles.push(f);
       }
     }
 
-    content.push({ type: 'text', text: buildPrompt(course, slos, files.filter(f=>f.b64).length, scraped, materialsList, syllabusDoc, textFiles) });
+    content.push({ type: 'text', text: buildPrompt(course, slos, pdfFileNames, scraped, materialsList, syllabusDoc, textFiles) });
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
@@ -114,7 +113,7 @@ exports.handler = async (event) => {
   }
 };
 
-function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDoc, textFiles = []) {
+function buildPrompt(course, slos, pdfFileNames = [], scraped, materialsList, syllabusDoc, textFiles = []) {
   const trimmedSlos = slos.map((s, i) => `SLO ${i + 1}: ${s.slice(0, 70)}`).join('\n');
   const desc = (course.description || '').slice(0, 120);
 
@@ -123,12 +122,13 @@ function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDo
 
   // Build materials context
   const matParts = [];
-  if (materialsList) matParts.push(`REQUIRED MATERIALS (assign to specific weeks):\n${materialsList.slice(0, 600)}`);
+  if (materialsList) matParts.push(`REQUIRED MATERIALS (assign to specific weeks):\n${materialsList.slice(0, 800)}`);
   if (scraped?.books?.length) matParts.push(`Populi books: ${scraped.books.slice(0, 8).join('; ')}`);
   if (scraped?.lessons?.length) matParts.push(`Populi weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
-  if (fileCount > 0) matParts.push(`${fileCount} PDF(s) uploaded — extract chapter titles and page ranges for readings.`);
-  for (const f of textFiles) {
-    matParts.push(`UPLOADED FILE: ${f.name}\n${f.text.slice(0, 3000)}`);
+  if (pdfFileNames.length > 0) matParts.push(`Uploaded PDF files (use titles as reading sources):\n${pdfFileNames.map(n => `- ${n}`).join('\n')}`);
+  // Text-extracted files (Word, PPT, Excel) — include content, capped per file
+  for (const f of textFiles.slice(0, 8)) {
+    matParts.push(`UPLOADED FILE: ${f.name}\n${f.text.slice(0, 2000)}`);
   }
   const matContext = matParts.length ? matParts.join('\n') : 'No materials provided — use plausible academic readings for this subject.';
 

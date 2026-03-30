@@ -465,6 +465,8 @@ YouTube: NT Wright on Galatians (Week 9)" style="min-height:110px" oninput="S.ma
       const meta = f.b64 ? `${(f.size/1024/1024).toFixed(2)} MB · PDF` : `${Math.round((f.text||'').length/1000)}k chars extracted`;
       return `<div class="file-item"><span style="font-size:18px">${icon}</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${meta}</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`;
     }).join('')}
+    ${S.files.filter(f=>f.b64).length > 5
+      ? `<div class="notice notice-warn" style="margin-top:12px">📋 <strong>${S.files.filter(f=>f.b64).length} PDFs uploaded</strong> — Claude will reference all filenames, but only reads the syllabus PDF in full. For best results, list required books in the Materials text box above rather than uploading all PDFs.</div>` : ''}
     ${!sd && !sc && S.files.length===0 && !S.materialsList.trim()
       ? `<div class="notice notice-warn" style="margin-top:12px">⚠ Upload your current syllabus to get the most accurate output — or add materials manually above.</div>` : ''}
     <div class="nav">
@@ -491,7 +493,7 @@ function step4() {
       <div><div class="slabel">Course</div><div class="sval">${e(c.title)} (${e(c.code)})</div></div>
       <div><div class="slabel">Duration</div><div class="sval">${c.weeks} weeks · ${c.creditHours} credit hours</div></div>
       <div><div class="slabel">Learning Outcomes</div><div class="sval">${S.slos.length} SLOs defined</div></div>
-      <div><div class="slabel">Materials</div><div class="sval">${S.files.length} PDF${S.files.length!==1?'s':''} uploaded</div></div>
+      <div><div class="slabel">Materials</div><div class="sval">${S.files.length} file${S.files.length!==1?'s':''} uploaded</div></div>
     </div>
     <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:12px">What Claude Will Generate</div>
     ${items.map(([ico,title,desc])=>`<div style="display:flex;gap:14px;padding:11px 14px;background:#FAFAF5;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;align-items:center"><span style="font-size:18px">${ico}</span><div><div style="font-weight:600;font-size:13px;color:var(--navy)">${title}</div><div style="font-size:12px;color:var(--muted)">${desc}</div></div></div>`).join('')}
