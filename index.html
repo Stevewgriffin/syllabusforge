@@ -328,7 +328,8 @@ function step0() {
       <span></span>
       <button class="btn-primary" onclick="loadCourseAndAdvance()" ${canProceed?'':'disabled'}>Load Course & Continue →</button>
     </div>
-  </div>`;
+  </div>
+  ${renderLibrary()}`;
 }
 
 // ── STEP 1: COURSE DETAILS ───────────────────────────────────────────────────
@@ -518,9 +519,10 @@ function step5() {
     <div class="review-header">
       <div><div class="review-title">${e(c.title)}</div><div class="review-meta">${e(c.code)} · ${c.creditHours} Credits · ${c.weeks} Weeks · ${e(c.term)}</div></div>
       <div class="export-row">
-        <button class="btn-export" style="background:#1E2D4A" onclick="dlJSON()">⬇ JSON</button>
-        <button class="btn-export" style="background:#B8721D" onclick="dlSyllabus()">⬇ Syllabus</button>
-        <button class="btn-export" style="background:#2A6049" onclick="dlCSV()">⬇ Populi CSV</button>
+        <button class="btn-export" style="background:#2A6049" onclick="dlPackage()">⬇ Download Package</button>
+        <button class="btn-export" style="background:#1E2D4A" onclick="saveToLibrary();alert('✅ Saved to your course library!')">💾 Save</button>
+        <button class="btn-export" style="background:#B8721D" onclick="dlSyllabus()">⬇ TXT</button>
+        <button class="btn-export" style="background:#555" onclick="dlCSV()">⬇ CSV</button>
       </div>
     </div>
     <div class="tabs">
@@ -1040,6 +1042,7 @@ async function generate() {
     if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
 
     S.result = data;
+    saveToLibrary();
     S.step = 5; S.tab = 'schedule'; S.expandedWeek = 1;
   } catch (err) {
     S.error = err.message;
@@ -1112,6 +1115,139 @@ function dlCSV() {
   ];
   const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
   dl(new Blob([csv], { type: 'text/csv' }), `${S.course.code||'course'}-populi.csv`);
+}
+
+// ── COURSE LIBRARY (localStorage) ────────────────────────────────────────────
+const LIB_KEY = 'sf-library-v1';
+
+function loadLibrary() {
+  try { return JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); } catch { return []; }
+}
+
+function saveToLibrary() {
+  if (!S.result || !S.course.code) return;
+  const lib = loadLibrary();
+  const id = `${S.course.code}-${S.course.term || 'current'}`.replace(/\s+/g, '-');
+  const entry = {
+    id,
+    savedAt: new Date().toISOString(),
+    course: { ...S.course },
+    slos: [...S.slos],
+    materialsList: S.materialsList,
+    result: S.result,
+    fileNames: S.files.map(f => f.name),
+    scrapedBooks: S.scraped?.books || [],
+  };
+  const idx = lib.findIndex(x => x.id === id);
+  if (idx >= 0) lib[idx] = entry; else lib.unshift(entry);
+  localStorage.setItem(LIB_KEY, JSON.stringify(lib.slice(0, 50)));
+}
+
+function openSavedCourse(id) {
+  const lib = loadLibrary();
+  const entry = lib.find(x => x.id === id);
+  if (!entry) return;
+  S.course = entry.course;
+  S.slos = entry.slos;
+  S.materialsList = entry.materialsList || '';
+  S.result = entry.result;
+  S.step = 5; S.tab = 'schedule'; S.expandedWeek = 1;
+  R();
+}
+
+function deleteSavedCourse(id) {
+  if (!confirm('Remove this course from your library?')) return;
+  const lib = loadLibrary().filter(x => x.id !== id);
+  localStorage.setItem(LIB_KEY, JSON.stringify(lib));
+  R();
+}
+
+function renderLibrary() {
+  const lib = loadLibrary();
+  if (!lib.length) return '';
+  return `<div class="card" style="margin-top:16px">
+    <div class="card-title" style="font-size:16px">📚 My Saved Courses</div>
+    <div class="card-hint">Previously generated syllabuses — click Open to review, edit, and download.</div>
+    ${lib.map(entry => {
+      const d = new Date(entry.savedAt);
+      const dateStr = d.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      const weeks = entry.course.weeks || '?';
+      const sloCount = entry.slos?.length || 0;
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:#FAFAF5">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--navy);font-size:13px">${e(entry.course.title||'Untitled')}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${e(entry.course.code)} · ${e(entry.course.term||'')} · ${weeks} weeks · ${sloCount} SLOs · Saved ${dateStr}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn-primary" style="font-size:11px;padding:5px 12px" onclick="openSavedCourse('${entry.id}')">Open →</button>
+          <button class="btn-sm" style="font-size:11px;padding:5px 10px;background:#EDF5FF;color:#1E2D4A" onclick="openSavedCourse('${entry.id}');setTimeout(dlPackage,200)">⬇ Package</button>
+          <button class="btn-sm" style="color:#991B1B;font-size:11px;padding:5px 10px" onclick="deleteSavedCourse('${entry.id}')">🗑</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ── DOWNLOAD PACKAGE (ZIP) ────────────────────────────────────────────────────
+async function dlPackage() {
+  if (!S.result) return;
+  const r = S.result; const c = S.course;
+  const zip = new JSZip();
+  const folder = zip.folder(`${c.code||'course'}-syllabus`);
+
+  // 1. JSON — full machine-readable data
+  folder.file(`${c.code}-data.json`, JSON.stringify({
+    savedAt: new Date().toISOString(),
+    course: c, slos: S.slos, materialsList: S.materialsList,
+    result: r, fileNames: S.files.map(f=>f.name)
+  }, null, 2));
+
+  // 2. TXT syllabus
+  const lines = [
+    'COURSE SYLLABUS', '═'.repeat(64), '',
+    c.title.toUpperCase(),
+    `Course Code: ${c.code}  |  Credits: ${c.creditHours}  |  Term: ${c.term}`,
+    `Instructor: ${c.instructor||'TBD'}`,
+    '', 'COURSE DESCRIPTION', '─'.repeat(40), c.description||'',
+    '', 'STUDENT LEARNING OUTCOMES', '─'.repeat(40),
+    ...S.slos.map((s,i)=>`SLO ${i+1}: ${s}`),
+    '', 'GRADING STRUCTURE', '─'.repeat(40),
+    ...(r.grading||[]).map(g=>`  ${g.category} (${g.weight}%): ${g.description}`),
+    '', 'COURSE SCHEDULE', '─'.repeat(40), '',
+    ...(r.schedule||[]).flatMap(w=>[
+      `WEEK ${w.week}: ${w.title}`,
+      `  Topics:   ${(w.themes||[w.topic]).join(' | ')}`,
+      w.reading ? `  Reading:  ${w.reading}` : null,
+      w.discussion ? `  Discuss:  ${w.discussion}` : null,
+      `  SLO:      ${w.slo||''}`, '',
+    ].filter(Boolean)),
+    'MAJOR ASSESSMENTS', '─'.repeat(40), '',
+    ...(r.assessments||[]).flatMap(a=>[
+      a.title, `Type: ${a.type}  |  Due: Week ${a.dueWeek}  |  Weight: ${a.gradingWeight}%`,
+      `SLOs: ${(a.slos||[]).join(', ')}`, a.description||'', '', a.fullPrompt||'', '', '─'.repeat(40), '',
+    ]),
+  ];
+  folder.file(`${c.code}-syllabus.txt`, lines.join('\n'));
+
+  // 3. Populi CSV
+  const rows = [
+    ['Week','Item Title','Type','Description','SLO Alignment','Weight/Points','Format/Length'],
+    ...(r.schedule||[]).map(w=>[w.week,`Week ${w.week}: ${w.title}`,'Lesson',w.topic||'',w.slo||'','','',]),
+    ...(r.assessments||[]).map(a=>[a.dueWeek,a.title,a.type,(a.description||'').slice(0,120),(a.slos||[]).join('; '),`${a.gradingWeight}%`,a.length||'',]),
+  ];
+  const csv = rows.map(row=>row.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  folder.file(`${c.code}-populi.csv`, csv);
+
+  // 4. Materials list
+  if (S.materialsList.trim()) {
+    folder.file(`${c.code}-materials.txt`, `COURSE MATERIALS\n${'─'.repeat(40)}\n${S.materialsList}`);
+  }
+
+  // 5. README
+  folder.file('README.txt', `SyllabusForge Course Package\n${'═'.repeat(40)}\nCourse: ${c.title} (${c.code})\nGenerated: ${new Date().toLocaleString()}\n\nFiles:\n  ${c.code}-data.json     — Full course data (re-import into SyllabusForge)\n  ${c.code}-syllabus.txt  — Formatted syllabus text\n  ${c.code}-populi.csv    — Import-ready Populi gradebook\n  ${c.code}-materials.txt — Materials list\n\nTo reload in SyllabusForge: upload the -data.json file.`);
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  dl(blob, `${c.code}-syllabus-package.zip`);
 }
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
