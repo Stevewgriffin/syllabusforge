@@ -82,6 +82,7 @@ exports.handler = async (event) => {
         topic: w.topic || w.k || '',
         slo: w.slo || w.o || '',
         reading: w.reading || w.r || '',
+        discussion: w.discussion || w.dq || '',
         themes: w.themes || (w.topic || w.k ? [w.topic || w.k] : []),
         readings: w.readings || [],
         discussions: w.discussions || [],
@@ -156,11 +157,12 @@ ${task}
 ${matContext}
 
 JSON schema — fill ALL fields, ultra-short strings:
-{"grading":[{"c":"category","w":number,"d":"phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"4-word title","k":"6-word topic","o":"SLO X","r":"Book Title ch/pp X"}],"assessments":[{"t":"title","y":"paper|quiz|project","w":number,"d":"1 sentence","p":"30-word prompt","l":"length","s":["SLO X"],"g":number}]}
+{"grading":[{"c":"category","w":number,"d":"phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"4-word title","k":"6-word topic","o":"SLO X","r":"Book Title ch/pp X","dq":"One discussion question?"}],"assessments":[{"t":"title","y":"paper|quiz|project","w":number,"d":"1 sentence","p":"30-word prompt","l":"length","s":["SLO X"],"g":number}]}
 
 Rules:
 - schedule has exactly ${course.weeks} entries n=1..${course.weeks}
 - "r" field = required reading for that week — use EXACT titles from the materials list, distributed across all weeks (spread books chapter by chapter, articles to relevant weeks, no week without a reading)
+- "dq" field = one focused discussion question tied to that week's topic and SLO, 10–15 words
 - 3 assessments, dueWeek 5–${course.weeks}
 - grading w values sum=100`;
 }
