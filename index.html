@@ -6,6 +6,9 @@
 <title>SyllabusForge — A Compass Institute Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'DM Sans', sans-serif; background: #F8F5EF; min-height: 100vh; color: #1A1A2E; }
@@ -192,6 +195,8 @@ let S = {
   slosFromCatalog: false,
   // Files
   files: [],
+  // Current syllabus doc (PDF b64 or extracted text from DOCX/PPTX)
+  syllabusDoc: null,
   // Populi scraper import
   scraped: null,
   // Manual materials list
@@ -391,51 +396,73 @@ function step2() {
 // ── STEP 3: MATERIALS ────────────────────────────────────────────────────────
 function step3() {
   const sc = S.scraped;
-  const scrapedSection = sc ? `
-    <div class="notice notice-success" style="margin-bottom:16px">
-      <div style="font-weight:600;margin-bottom:6px">✓ Populi content imported — ${e(sc.courseHint?.title||'Course')}</div>
-      ${sc.books?.length ? `<div style="font-size:13px;margin-bottom:4px"><strong>Books (${sc.books.length}):</strong> ${sc.books.slice(0,3).map(b=>e(b)).join(' · ')}${sc.books.length>3?' · …':''}</div>` : ''}
-      ${sc.lessons?.length ? `<div style="font-size:13px;margin-bottom:4px"><strong>Lessons/Weeks (${sc.lessons.length}):</strong> ${sc.lessons.slice(0,3).map(l=>e(l)).join(' · ')}${sc.lessons.length>3?' · …':''}</div>` : ''}
-      <button class="btn-sm" style="margin-top:6px" onclick="S.scraped=null;R()">✕ Remove import</button>
-    </div>` : `
-    <div style="margin-bottom:18px">
-      <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Import from Populi</div>
-      <div style="display:flex;gap:10px;align-items:center;padding:14px;background:var(--navy-light);border:1.5px dashed #B3C5DF;border-radius:8px;cursor:pointer" onclick="document.getElementById('sfi').click()">
-        <span style="font-size:22px">🔗</span>
-        <div>
-          <div style="font-weight:600;color:var(--navy);font-size:13px">Import syllabusforge-import.json</div>
-          <div style="font-size:12px;color:var(--muted)">Export from the <a href="/scraper.html" target="_blank" style="color:var(--amber)">Populi Scraper</a> — brings in books, articles, lesson structure</div>
+  const sd = S.syllabusDoc;
+
+  const syllabusSection = sd
+    ? `<div class="notice notice-success" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:start">
+          <div>
+            <div style="font-weight:600;margin-bottom:3px">📄 Current Syllabus Loaded — ${e(sd.name)}</div>
+            <div style="font-size:12px;color:#4A4A6A">Claude will read this first and preserve its structure, books, and assignments — aligned to your catalog SLOs.</div>
+          </div>
+          <button class="btn-sm" style="flex-shrink:0;margin-left:12px" onclick="S.syllabusDoc=null;R()">✕</button>
         </div>
-      </div>
-      <input id="sfi" type="file" accept=".json" style="display:none" onchange="importScraped(event)">
-    </div>`;
+      </div>`
+    : `<div style="margin-bottom:20px">
+        <label>Current Syllabus <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(PDF, Word, or PowerPoint — read first, preserved in output)</span></label>
+        <div style="display:flex;gap:10px;align-items:center;padding:16px;background:#FAFAF5;border:2px dashed var(--amber-border);border-radius:8px;cursor:pointer" onclick="document.getElementById('sylfi').click()">
+          <span style="font-size:26px">📋</span>
+          <div>
+            <div style="font-weight:600;color:var(--navy);font-size:13px">Upload the syllabus as currently taught</div>
+            <div style="font-size:12px;color:var(--muted)">PDF · Word (.docx) · PowerPoint (.pptx) · Excel (.xlsx)</div>
+          </div>
+        </div>
+        <input id="sylfi" type="file" accept=".pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls" style="display:none" onchange="handleSyllabus(event)">
+        <div style="font-size:11px;color:var(--muted);margin-top:5px">This becomes Claude's primary reference. The new syllabus will preserve its weekly structure, books, and assignments — remapped to your IE catalog SLOs.</div>
+      </div>`;
+
+  const scrapedBar = sc
+    ? `<div class="notice notice-success" style="margin-bottom:16px;padding:10px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px"><strong>🔗 Populi Import:</strong> ${e(sc.courseHint?.title||'Course')}${sc.books?.length?` · ${sc.books.length} books`:''}${sc.lessons?.length?` · ${sc.lessons.length} lessons`:''}</div>
+          <button class="btn-sm" onclick="S.scraped=null;R()">✕</button>
+        </div>
+      </div>`
+    : `<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--navy-light);border:1px solid #B3C5DF;border-radius:8px;cursor:pointer" onclick="document.getElementById('sfi').click()">
+        <span style="font-size:18px">🔗</span>
+        <div style="flex:1;font-size:13px"><strong style="color:var(--navy)">Import from Populi Scraper</strong> <span style="color:var(--muted)">— books, articles, lesson structure from your live Populi course</span> <a href="/scraper.html" target="_blank" style="color:var(--amber)">Open Scraper →</a></div>
+        <input id="sfi" type="file" accept=".json" style="display:none" onchange="importScraped(event)">
+      </div>`;
 
   return `<div class="card">
     <div class="card-title">Course Materials</div>
-    <div class="card-hint">Import your existing Populi course content, then optionally upload PDFs. Claude uses both to build a grounded, chapter-specific syllabus.</div>
-    ${scrapedSection}
-    <div class="field" style="margin-bottom:20px">
-      <label>Required Materials — Books, Articles, Case Studies, Presentations</label>
-      <textarea placeholder="Paste your reading list here, one item per line. Examples:
-• The Letters of Paul by Calvin Roetzel (Chapters 1–4)
-• HBR Article: Leadership and the New Science
-• Case Study: Southwest Airlines Culture
-• Week 3 PowerPoint: Pauline Theology Overview
-• Romans Commentary by Douglas Moo" style="min-height:130px" oninput="S.materialsList=this.value">${e(S.materialsList)}</textarea>
-      <div style="font-size:11px;color:var(--muted);margin-top:4px">Claude uses this list to assign real readings and reference your actual materials in the schedule — even for PowerPoints, Word docs, and articles.</div>
+    <div class="card-hint">Upload your existing syllabus first — Claude preserves it and aligns it to your IE catalog SLOs. Then add books, articles, case studies, and presentations.</div>
+
+    ${syllabusSection}
+
+    <div class="field" style="margin-bottom:16px">
+      <label>Books, Articles, Case Studies, Presentations, Videos</label>
+      <textarea placeholder="One item per line — any format. Examples:
+The Letters of Paul — Calvin Roetzel (Chapters 1–4)
+HBR Article: Leadership and the New Science
+Case Study: Southwest Airlines (Week 6 PPT)
+Romans Commentary — Douglas Moo
+YouTube: NT Wright on Galatians (Week 9)" style="min-height:110px" oninput="S.materialsList=this.value">${e(S.materialsList)}</textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Works for any format — PDFs, Word, PowerPoints, articles, videos, case studies. Claude assigns these to specific weeks.</div>
     </div>
 
-    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">PDF Materials <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional — upload for deeper chapter extraction)</span></div>
+    ${scrapedBar}
+
+    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Additional PDFs <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Claude reads full content)</span></div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
-      <div style="font-size:28px;margin-bottom:8px">📚</div>
-      <div style="font-weight:600;color:var(--navy);font-size:14px;margin-bottom:3px">Drop PDFs here or click to browse</div>
-      <div style="font-size:12px;color:var(--muted)">Textbooks · Course packets · Articles · Any PDF material</div>
+      <div style="font-size:24px;margin-bottom:6px">📚</div>
+      <div style="font-weight:600;color:var(--navy);font-size:13px;margin-bottom:2px">Drop PDFs here or click to browse</div>
+      <div style="font-size:12px;color:var(--muted)">Textbooks · Articles · Course packets</div>
     </div>
     <input id="fi" type="file" accept=".pdf" multiple style="display:none" onchange="handleFiles(event)">
     ${S.files.map((f,i)=>`<div class="file-item"><span style="font-size:18px">📄</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`).join('')}
-    ${!sc && S.files.length===0 && !S.materialsList.trim()
-      ? `<div class="notice notice-warn" style="margin-top:12px">⚠ No materials yet — add your reading list above, import from Populi, or upload PDFs.</div>`
-      : S.files.length>0 ? `<div class="notice notice-success" style="margin-top:12px">✓ ${S.files.length} PDF${S.files.length>1?'s':''} ready</div>` : ''}
+    ${!sd && !sc && S.files.length===0 && !S.materialsList.trim()
+      ? `<div class="notice notice-warn" style="margin-top:12px">⚠ Upload your current syllabus to get the most accurate output — or add materials manually above.</div>` : ''}
     <div class="nav">
       <button class="btn-ghost" onclick="toStep(2)">← Back</button>
       <button class="btn-primary" onclick="toStep(4)">Next: Review & Generate →</button>
@@ -621,6 +648,70 @@ function loadCourseAndAdvance() {
   S.step = 1; R();
 }
 
+async function handleSyllabus(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'pdf') {
+    // PDF → base64 for Anthropic native document API
+    const reader = new FileReader();
+    reader.onload = ev => {
+      S.syllabusDoc = { name: file.name, type: 'pdf', b64: ev.target.result.split(',')[1] };
+      R();
+    };
+    reader.readAsDataURL(file);
+
+  } else if (ext === 'docx' || ext === 'doc') {
+    // DOCX → extract plain text via mammoth
+    const buf = await file.arrayBuffer();
+    if (typeof mammoth !== 'undefined') {
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      S.syllabusDoc = { name: file.name, type: 'text', text: result.value.slice(0, 6000) };
+    } else {
+      alert('Word doc parser not loaded yet — try again in a moment.');
+      return;
+    }
+    R();
+
+  } else if (ext === 'pptx' || ext === 'ppt') {
+    // PPTX → unzip and extract text from slide XML via JSZip
+    const buf = await file.arrayBuffer();
+    if (typeof JSZip !== 'undefined') {
+      const zip = await JSZip.loadAsync(buf);
+      const slideFiles = Object.keys(zip.files).filter(n => n.match(/ppt\/slides\/slide\d+\.xml/)).sort();
+      const texts = [];
+      for (const sf of slideFiles.slice(0, 30)) {
+        const xml = await zip.files[sf].async('string');
+        const t = xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (t) texts.push(t);
+      }
+      S.syllabusDoc = { name: file.name, type: 'text', text: texts.join('\n').slice(0, 6000) };
+    } else {
+      alert('PowerPoint parser not loaded yet — try again in a moment.');
+      return;
+    }
+    R();
+
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    // XLSX → convert first sheet to CSV text via SheetJS
+    const buf = await file.arrayBuffer();
+    if (typeof XLSX !== 'undefined') {
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      S.syllabusDoc = { name: file.name, type: 'text', text: csv.slice(0, 6000) };
+    } else {
+      alert('Excel parser not loaded yet — try again in a moment.');
+      return;
+    }
+    R();
+
+  } else {
+    alert('Unsupported format. Please use PDF, Word (.docx), PowerPoint (.pptx), or Excel (.xlsx).');
+  }
+}
+
 function importScraped(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -667,7 +758,7 @@ function resetAll() {
     selectedProgram: '', selectedCourse: '',
     course: { title:'', code:'', creditHours:'3', weeks:'15', description:'', instructor:'', term:'', programId:'', courseId:'' },
     slos: [], sloInput: '', slosFromCatalog: false,
-    files: [],
+    files: [], syllabusDoc: null, scraped: null, materialsList: '',
     generating: false, genMsg: '', genInterval: null,
     result: null, error: '', tab: 'schedule', expandedWeek: null
   };
@@ -713,6 +804,7 @@ async function generate() {
         fileNames: S.scraped.fileNames || [],
       } : null,
       materialsList: S.materialsList.trim() || null,
+      syllabusDoc: S.syllabusDoc || null,
     };
 
     const res = await fetch('/api/generate', {

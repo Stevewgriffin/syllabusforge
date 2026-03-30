@@ -9,7 +9,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { course, slos, files = [], scraped = null, materialsList = null } = JSON.parse(event.body || '{}');
+    const { course, slos, files = [], scraped = null, materialsList = null, syllabusDoc = null } = JSON.parse(event.body || '{}');
 
     if (!course || !slos?.length) {
       return {
@@ -24,6 +24,16 @@ exports.handler = async (event) => {
     // Build message content: optional PDF documents + text prompt
     const content = [];
 
+    // If existing syllabus is a PDF, add it first as a native Anthropic document
+    if (syllabusDoc?.type === 'pdf' && syllabusDoc.b64) {
+      content.push({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: syllabusDoc.b64 },
+        title: syllabusDoc.name || 'Current Syllabus',
+      });
+    }
+
+    // Additional PDFs (textbooks, articles, etc.)
     for (const f of files) {
       if (f.b64) {
         content.push({
@@ -34,7 +44,7 @@ exports.handler = async (event) => {
       }
     }
 
-    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped, materialsList) });
+    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped, materialsList, syllabusDoc) });
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
@@ -92,37 +102,46 @@ exports.handler = async (event) => {
   }
 };
 
-function buildPrompt(course, slos, fileCount, scraped, materialsList) {
-  const sloList = slos.map((s, i) => `SLO ${i + 1}: ${s}`).join('\n');
-  let materialNote = fileCount > 0
-    ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges.'
-    : 'No PDFs uploaded — generate plausible readings grounded in the subject matter.';
+function buildPrompt(course, slos, fileCount, scraped, materialsList, syllabusDoc) {
+  const trimmedSlos = slos.map((s, i) => `SLO ${i + 1}: ${s.slice(0, 70)}`).join('\n');
+  const desc = (course.description || '').slice(0, 120);
 
-  if (materialsList) {
-    materialNote += `\nREQUIRED MATERIALS (use these exact titles in reading assignments):\n${materialsList.slice(0, 800)}`;
-  }
+  const hasSyllabus = !!(syllabusDoc);
+  const syllabusText = syllabusDoc?.type === 'text' ? syllabusDoc.text?.slice(0, 1200) : null;
 
-  if (scraped) {
-    const parts = [];
-    if (scraped.books?.length) parts.push(`Books: ${scraped.books.slice(0, 8).join('; ')}`);
-    if (scraped.lessons?.length) parts.push(`Weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
-    if (scraped.fileNames?.length) parts.push(`Files: ${scraped.fileNames.slice(0, 6).join(', ')}`);
-    if (parts.length) materialNote += `\nPOPULI IMPORT — ${parts.join(' | ')}`;
-  }
+  // Build materials context
+  const matParts = [];
+  if (materialsList) matParts.push(`REQUIRED MATERIALS (assign to specific weeks):\n${materialsList.slice(0, 600)}`);
+  if (scraped?.books?.length) matParts.push(`Populi books: ${scraped.books.slice(0, 8).join('; ')}`);
+  if (scraped?.lessons?.length) matParts.push(`Populi weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
+  if (fileCount > 0) matParts.push(`${fileCount} PDF(s) uploaded — extract chapter titles and page ranges for readings.`);
+  const matContext = matParts.length ? matParts.join('\n') : 'No materials provided — use plausible academic readings for this subject.';
 
-  // Trim description to 100 chars to reduce input tokens
-  const desc = (course.description || '').slice(0, 100);
-  // Trim SLOs to 60 chars each
-  const trimmedSlos = slos.map((s, i) => `SLO ${i + 1}: ${s.slice(0, 60)}`).join('\n');
+  const task = hasSyllabus
+    ? `TASK: You have been given the EXISTING SYLLABUS for this course${syllabusDoc.type === 'pdf' ? ' (see attached PDF — read it first)' : ` (see extracted text below)`}.
+INSTRUCTIONS:
+1. Read the existing syllabus carefully — it is the PRIMARY reference
+2. Preserve its weekly topics, books, assignments, and structure exactly
+3. Re-map each week to the most relevant SLO from the list below
+4. Ensure ALL SLOs are covered across the ${course.weeks} weeks
+5. Keep the same reading titles and assignment names — do not invent new ones
+${syllabusText ? `\nEXISTING SYLLABUS TEXT:\n${syllabusText}` : ''}`
+    : `TASK: Generate a new ${course.weeks}-week course structure grounded in the materials below.`;
 
-  return `Curriculum designer for Williamson College. Output ONLY JSON, no prose.
+  return `Curriculum designer for Williamson College (SACSCOC accredited, Christ-centered). Output ONLY JSON.
 
-${course.title}|${course.code}|${course.weeks}wk|${course.creditHours}cr|${course.term || 'Current Term'}
+COURSE: ${course.title} | ${course.code} | ${course.creditHours}cr | ${course.weeks} weeks | ${course.term || 'Current Term'}
 ${desc}
+
+SLOs (map every week and assessment to these):
 ${trimmedSlos}
 
-JSON schema (copy exactly, fill values):
-{"grading":[{"c":"category name","w":number,"d":"one phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"3-word title","k":"5-word topic","o":"SLO X"}],"assessments":[{"t":"title","y":"paper","w":number,"d":"one sentence","p":"25-word prompt","l":"pages/length","s":["SLO X"],"g":number}]}
+${task}
 
-Rules: ${course.weeks} entries in schedule n=1..${course.weeks}. 3 assessments with dueWeek between 5 and ${course.weeks}. grading w values sum=100. ALL strings ultra-short.`;
+${matContext}
+
+JSON schema — fill ALL fields, ultra-short strings:
+{"grading":[{"c":"category","w":number,"d":"phrase","s":["SLO 1"]}],"schedule":[{"n":number,"t":"4-word title","k":"6-word topic","o":"SLO X"}],"assessments":[{"t":"title","y":"paper|quiz|project","w":number,"d":"1 sentence","p":"30-word prompt","l":"length","s":["SLO X"],"g":number}]}
+
+Rules: schedule has exactly ${course.weeks} entries n=1..${course.weeks}. 3 assessments, dueWeek 5–${course.weeks}. grading w values sum=100.`;
 }
