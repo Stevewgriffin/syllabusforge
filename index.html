@@ -428,10 +428,16 @@ function step3() {
           <button class="btn-sm" onclick="S.scraped=null;R()">✕</button>
         </div>
       </div>`
-    : `<div style="margin-bottom:16px;display:flex;gap:8px;align-items:center;padding:10px 14px;background:var(--navy-light);border:1px solid #B3C5DF;border-radius:8px;cursor:pointer" onclick="document.getElementById('sfi').click()">
-        <span style="font-size:18px">🔗</span>
-        <div style="flex:1;font-size:13px"><strong style="color:var(--navy)">Import from Populi Scraper</strong> <span style="color:var(--muted)">— books, articles, lesson structure from your live Populi course</span> <a href="/scraper.html" target="_blank" style="color:var(--amber)">Open Scraper →</a></div>
-        <input id="sfi" type="file" accept=".json" style="display:none" onchange="importScraped(event)">
+    : `<div style="margin-bottom:16px;background:var(--navy-light);border:1px solid #B3C5DF;border-radius:8px;overflow:hidden">
+        <div style="display:flex;gap:8px;align-items:center;padding:10px 14px">
+          <span style="font-size:18px">🔗</span>
+          <div style="flex:1;font-size:13px"><strong style="color:var(--navy)">Import from Populi Scraper</strong> <span style="color:var(--muted)">— books, articles, lesson structure from your live Populi course</span> <a href="/scraper.html" target="_blank" style="color:var(--amber)">Open Scraper →</a></div>
+        </div>
+        <div style="padding:0 14px 12px 14px">
+          <button class="btn-primary" style="font-size:12px;padding:7px 16px" onclick="document.getElementById('sfi').click()">📂 Upload Scraper JSON files</button>
+          <span style="font-size:11px;color:var(--muted);margin-left:10px">Select all 3 JSON files at once</span>
+        </div>
+        <input id="sfi" type="file" accept=".json" multiple style="display:none" onchange="importScraped(event)">
       </div>`;
 
   return `<div class="card">
@@ -720,21 +726,47 @@ async function handleSyllabus(event) {
 }
 
 function importScraped(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const data = JSON.parse(ev.target.result);
-      if (data._type !== 'syllabusforge-import') {
-        alert('This doesn\'t look like a SyllabusForge import file. Use the Populi Scraper to generate one.');
-        return;
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+
+  const reads = files.map(f => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = ev => { try { res(JSON.parse(ev.target.result)); } catch(e) { rej(new Error(`${f.name}: ${e.message}`)); } };
+    r.onerror = rej;
+    r.readAsText(f);
+  }));
+
+  Promise.all(reads).then(dataArr => {
+    // Merge all files — handles both syllabusforge-import and raw bookmarklet JSON
+    const merged = { books: [], lessons: [], fileNames: [], description: '', courseHint: {} };
+    for (const data of dataArr) {
+      if (data._type === 'syllabusforge-import') {
+        // Processed export from scraper.html
+        merged.books.push(...(data.books || []));
+        merged.lessons.push(...(data.lessons || []));
+        merged.fileNames.push(...(data.fileNames || []));
+        if (!merged.description && data.description) merged.description = data.description;
+        if (data.courseHint) Object.assign(merged.courseHint, data.courseHint);
+      } else if (data.url || data.scrapedAt) {
+        // Raw bookmarklet output — extract what we can
+        merged.books.push(...(data.books || []));
+        merged.lessons.push(...(data.lessons || []));
+        merged.fileNames.push(...(data.files || []).map(f => f.name || f));
+        if (!merged.description && data.syllabus) merged.description = data.syllabus.slice(0, 500);
+        if (data.pageTitle && !merged.courseHint.title) merged.courseHint.title = data.pageTitle;
+        // Pull any text from rawSections
+        (data.rawSections || []).filter(s => s.type === 'content' && s.text?.length > 100)
+          .slice(0, 3).forEach(s => merged.lessons.push(s.text.slice(0, 200)));
       }
-      S.scraped = data;
-      R();
-    } catch { alert('Could not read file — make sure it\'s a valid JSON file from the Populi Scraper.'); }
-  };
-  reader.readAsText(file);
+    }
+    // Deduplicate
+    merged.books = [...new Set(merged.books)].filter(Boolean).slice(0, 30);
+    merged.lessons = [...new Set(merged.lessons)].filter(Boolean).slice(0, 40);
+    merged.fileNames = [...new Set(merged.fileNames)].filter(Boolean);
+
+    S.scraped = merged;
+    R();
+  }).catch(err => alert(`Could not read file — ${err.message}`));
 }
 
 // ── SHARED ACTIONS ───────────────────────────────────────────────────────────
