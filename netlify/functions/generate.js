@@ -37,7 +37,7 @@ exports.handler = async (event) => {
     content.push({ type: 'text', text: buildPrompt(course, slos, files.length) });
 
     const message = await client.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-sonnet-4-5',
       max_tokens: 6000,
       messages: [{ role: 'user', content }],
     });
