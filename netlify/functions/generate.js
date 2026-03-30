@@ -38,7 +38,7 @@ exports.handler = async (event) => {
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 3000,
+      max_tokens: 1500,
       messages: [{ role: 'user', content }],
     });
 
@@ -82,13 +82,13 @@ ${materialNote}
 Return ONLY valid JSON — no markdown, no explanation:
 {
   "grading": [{"category":"string","weight":number,"description":"1 sentence","slos":["SLO 1"]}],
-  "schedule": [{"week":number,"title":"string","topic":"string","reading":"string","discussion":"string (1 sentence)","slo":"SLO X"}],
-  "assessments": [{"title":"string","type":"paper|quiz|project","dueWeek":number,"description":"string","fullPrompt":"string (50 words)","length":"string","slos":["SLO X"],"gradingWeight":number}]
+  "schedule": [{"week":number,"title":"string (4 words)","topic":"string (8 words max)","slo":"SLO X"}],
+  "assessments": [{"title":"string","type":"paper|quiz|project","dueWeek":number,"description":"string (1 sentence)","fullPrompt":"string (30 words)","length":"string","slos":["SLO X"],"gradingWeight":number}]
 }
 
-Rules:
-- ALL ${course.weeks} weeks in schedule (week 1 through ${course.weeks})
-- 3-4 assessments; at least one faith-integration reflection
-- Grading weights sum to exactly 100
-- BE CONCISE — every field one short phrase or sentence`;
+Strict rules:
+- ALL ${course.weeks} weeks in schedule
+- 3 assessments; at least one faith reflection
+- Grading weights sum to 100
+- MAXIMUM BREVITY — short phrases only, no padding`;
 }
