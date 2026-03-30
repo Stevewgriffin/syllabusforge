@@ -1,11 +1,10 @@
-// Fetches the IE catalog data (data-block.js) from the williamson-college-ie
-// GitHub repo, executes it in a sandboxed vm context, and returns the
-// programs + course SLOs as clean JSON for SyllabusForge.
+// Fetches the IE catalog data (data-block.js) directly from the live IE app.
+// SyllabusForge and the IE app are permanently connected — any update to the
+// IE catalog (courses, SLOs, PLOs, ILOs) is automatically reflected here.
 
 const vm = require('vm');
 
-const DATA_BLOCK_URL =
-  'https://raw.githubusercontent.com/Stevewgriffin/williamson-college-ie/main/data-block.js';
+const DATA_BLOCK_URL = 'https://college-ie.netlify.app/data-block.js';
 
 exports.handler = async () => {
   try {
