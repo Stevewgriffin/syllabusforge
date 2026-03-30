@@ -194,6 +194,8 @@ let S = {
   files: [],
   // Populi scraper import
   scraped: null,
+  // Manual materials list
+  materialsList: '',
   // Generation
   generating: false, genMsg: '', genInterval: null,
   result: null, error: '', tab: 'schedule', expandedWeek: null
@@ -412,7 +414,18 @@ function step3() {
     <div class="card-title">Course Materials</div>
     <div class="card-hint">Import your existing Populi course content, then optionally upload PDFs. Claude uses both to build a grounded, chapter-specific syllabus.</div>
     ${scrapedSection}
-    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">PDF Materials</div>
+    <div class="field" style="margin-bottom:20px">
+      <label>Required Materials — Books, Articles, Case Studies, Presentations</label>
+      <textarea placeholder="Paste your reading list here, one item per line. Examples:
+• The Letters of Paul by Calvin Roetzel (Chapters 1–4)
+• HBR Article: Leadership and the New Science
+• Case Study: Southwest Airlines Culture
+• Week 3 PowerPoint: Pauline Theology Overview
+• Romans Commentary by Douglas Moo" style="min-height:130px" oninput="S.materialsList=this.value">${e(S.materialsList)}</textarea>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Claude uses this list to assign real readings and reference your actual materials in the schedule — even for PowerPoints, Word docs, and articles.</div>
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">PDF Materials <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional — upload for deeper chapter extraction)</span></div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
       <div style="font-size:28px;margin-bottom:8px">📚</div>
       <div style="font-weight:600;color:var(--navy);font-size:14px;margin-bottom:3px">Drop PDFs here or click to browse</div>
@@ -420,8 +433,8 @@ function step3() {
     </div>
     <input id="fi" type="file" accept=".pdf" multiple style="display:none" onchange="handleFiles(event)">
     ${S.files.map((f,i)=>`<div class="file-item"><span style="font-size:18px">📄</span><div style="flex:1"><div class="file-name">${e(f.name)}</div><div class="file-size">${(f.size/1024/1024).toFixed(2)} MB</div></div><button class="btn-sm" onclick="rmFile(${i})">Remove</button></div>`).join('')}
-    ${!sc && S.files.length===0
-      ? `<div class="notice notice-warn" style="margin-top:12px">⚠ No materials yet — import from Populi or upload PDFs so Claude can build a grounded reading schedule.</div>`
+    ${!sc && S.files.length===0 && !S.materialsList.trim()
+      ? `<div class="notice notice-warn" style="margin-top:12px">⚠ No materials yet — add your reading list above, import from Populi, or upload PDFs.</div>`
       : S.files.length>0 ? `<div class="notice notice-success" style="margin-top:12px">✓ ${S.files.length} PDF${S.files.length>1?'s':''} ready</div>` : ''}
     <div class="nav">
       <button class="btn-ghost" onclick="toStep(2)">← Back</button>
@@ -699,6 +712,7 @@ async function generate() {
         description: S.scraped.courseHint?.description || '',
         fileNames: S.scraped.fileNames || [],
       } : null,
+      materialsList: S.materialsList.trim() || null,
     };
 
     const res = await fetch('/api/generate', {

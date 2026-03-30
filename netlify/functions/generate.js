@@ -9,7 +9,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { course, slos, files = [], scraped = null } = JSON.parse(event.body || '{}');
+    const { course, slos, files = [], scraped = null, materialsList = null } = JSON.parse(event.body || '{}');
 
     if (!course || !slos?.length) {
       return {
@@ -34,7 +34,7 @@ exports.handler = async (event) => {
       }
     }
 
-    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped) });
+    content.push({ type: 'text', text: buildPrompt(course, slos, files.length, scraped, materialsList) });
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5',
@@ -92,18 +92,22 @@ exports.handler = async (event) => {
   }
 };
 
-function buildPrompt(course, slos, fileCount, scraped) {
+function buildPrompt(course, slos, fileCount, scraped, materialsList) {
   const sloList = slos.map((s, i) => `SLO ${i + 1}: ${s}`).join('\n');
   let materialNote = fileCount > 0
     ? 'Use the uploaded documents to extract actual chapter titles, key concepts, and page ranges.'
     : 'No PDFs uploaded — generate plausible readings grounded in the subject matter.';
 
+  if (materialsList) {
+    materialNote += `\nREQUIRED MATERIALS (use these exact titles in reading assignments):\n${materialsList.slice(0, 800)}`;
+  }
+
   if (scraped) {
     const parts = [];
-    if (scraped.books?.length) parts.push(`Required books: ${scraped.books.slice(0, 8).join('; ')}`);
-    if (scraped.lessons?.length) parts.push(`Existing weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
-    if (scraped.fileNames?.length) parts.push(`Course files: ${scraped.fileNames.slice(0, 6).join(', ')}`);
-    if (parts.length) materialNote += `\nIMPORT FROM POPULI — use these in the schedule: ${parts.join(' | ')}`;
+    if (scraped.books?.length) parts.push(`Books: ${scraped.books.slice(0, 8).join('; ')}`);
+    if (scraped.lessons?.length) parts.push(`Weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
+    if (scraped.fileNames?.length) parts.push(`Files: ${scraped.fileNames.slice(0, 6).join(', ')}`);
+    if (parts.length) materialNote += `\nPOPULI IMPORT — ${parts.join(' | ')}`;
   }
 
   // Trim description to 100 chars to reduce input tokens
