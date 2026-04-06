@@ -1444,7 +1444,7 @@ async function generateTeachPlan() {
     }
     const allQuizzes = [];
     for (let q = 0; q < quizBatches.length; q++) {
-      S.teachPlanPhase = `Phase ${4 + batches.length + q}/${4 + batches.length + quizBatches.length} — Generating quizzes for weeks ${quizBatches[q][0]}–${quizBatches[q][quizBatches[q].length-1]}…`;
+      S.teachPlanPhase = `Generating quizzes: batch ${q + 1}/${quizBatches.length} (weeks ${quizBatches[q][0]}–${quizBatches[q][quizBatches[q].length-1]})…`;
       S._tpProgress = 70 + Math.round((q + 1) / quizBatches.length * 15);
       R();
       const qz = await tpCall({ ...base, phase: 'quizzes', weeks: quizBatches[q], masterPlan });
