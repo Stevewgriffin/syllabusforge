@@ -1617,37 +1617,37 @@ async function tpCall(body) {
   const message = await resp.json();
   const text = (message.content || []).map(b => b.text || '').join('');
 
-  // Extract JSON from response
-  let si = -1, sc = '';
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '{' || text[i] === '[') { sc = text[i]; si = i; break; }
-  }
-  if (si === -1) throw new Error('No JSON in AI response');
-  const ec = sc === '{' ? '}' : ']';
-  let depth = 0, ei = -1;
-  for (let i = si; i < text.length; i++) {
-    if (text[i] === sc) depth++;
-    else if (text[i] === ec) { depth--; if (depth === 0) { ei = i; break; } }
-  }
-  if (ei === -1) throw new Error('JSON truncated');
-  const jsonStr = text.slice(si, ei + 1);
-  try { return JSON.parse(jsonStr); }
-  catch (e) {
-    // Try multiple repair strategies
-    let repaired = jsonStr;
-    // Fix trailing commas before } or ]
+  // Try parsing the full text first (best case: clean JSON)
+  try { return JSON.parse(text); } catch (e) { /* try extraction */ }
+
+  // Try to find and parse JSON from the response using multiple strategies
+  // Strategy 1: Find first { or [ and try parsing from there
+  const firstBrace = text.indexOf('{');
+  const firstBracket = text.indexOf('[');
+  const starts = [firstBrace, firstBracket].filter(i => i >= 0).sort((a, b) => a - b);
+
+  for (const si of starts) {
+    // Try parsing from this position to the end, trimming progressively
+    let candidate = text.slice(si);
+    // Remove any trailing text after the last } or ]
+    const lastBrace = candidate.lastIndexOf('}');
+    const lastBracket = candidate.lastIndexOf(']');
+    const endPos = Math.max(lastBrace, lastBracket);
+    if (endPos > 0) candidate = candidate.slice(0, endPos + 1);
+
+    // Try direct parse
+    try { return JSON.parse(candidate); } catch (e) { /* try repairs */ }
+
+    // Repair: trailing commas, unescaped newlines
+    let repaired = candidate;
     repaired = repaired.replace(/,\s*([}\]])/g, '$1');
-    // Fix unescaped newlines in strings
-    repaired = repaired.replace(/(?<=":"[^"]*)\n/g, '\\n');
-    // Fix missing commas between array elements (}{  or ]["  patterns)
     repaired = repaired.replace(/}(\s*){/g, '},{');
-    repaired = repaired.replace(/](\s*)\[/g, '],[');
-    try { return JSON.parse(repaired); }
-    catch (e2) {
-      console.log('JSON repair failed. First 500 chars:', jsonStr.slice(0, 500));
-      throw new Error('JSON parse error: ' + e.message);
-    }
+    try { return JSON.parse(repaired); } catch (e) { /* continue */ }
   }
+
+  // All strategies failed — return null instead of throwing
+  console.log('JSON extraction failed for phase:', body.phase, 'Response start:', text.slice(0, 300));
+  return null;
 }
 
 // Build prompt based on phase
