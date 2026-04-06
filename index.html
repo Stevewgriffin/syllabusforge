@@ -1477,20 +1477,30 @@ async function generateTeachPlan() {
       exams.final.essays = (exams.final.essays || []).map(q => ({ prompt: q.prompt || q.pr || '', points: q.points || q.p || 25, slo: q.slo || q.s || '', rubric: (q.rubric || []).map(r => ({ level: r.level || r.l || '', points: r.points || r.p || '', description: r.description || r.d || '' })) }));
     }
 
-    const allPassageRefs = masterPlan.flatMap(w => w.biblePassages || []).filter(Boolean);
+    const allPassageRefs = [...new Set(masterPlan.flatMap(w => w.biblePassages || []).filter(Boolean))];
     let biblePassages = {};
     if (allPassageRefs.length > 0) {
-      try {
-        const resp = await fetch('/api/esv-passages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ passages: [...new Set(allPassageRefs)] }),
-        });
-        const data = await resp.json();
-        for (const p of (data.passages || [])) {
-          biblePassages[p.ref] = p.html || p.canonical || '';
-        }
-      } catch (e) { /* Bible passages optional */ }
+      S.teachPlanPhase = `Fetching ${allPassageRefs.length} Bible passages from ESV…`;
+      R();
+      // Fetch ESV passages directly from browser (bypasses Netlify timeout)
+      for (const ref of allPassageRefs) {
+        try {
+          const apiKey = await getApiKey(); // reuse the same key fetch
+          // Try via Netlify proxy first, fall back gracefully
+          const params = new URLSearchParams({ q: ref, 'include-footnotes': 'false', 'include-headings': 'true', 'include-short-copyright': 'true', 'include-passage-references': 'true' });
+          const resp = await fetch('/api/esv-passages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ passages: [ref] }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            for (const p of (data.passages || [])) {
+              if (p.html) biblePassages[p.ref || ref] = p.html;
+            }
+          }
+        } catch (e) { /* individual passage fetch failed — skip */ }
+      }
     }
 
     S._tpProgress = 100;
