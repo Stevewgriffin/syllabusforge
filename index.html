@@ -1467,26 +1467,36 @@ async function generateTeachPlan() {
       });
     }
 
-    // Phase: Exams — split into midterm + final
-    S.teachPlanPhase = 'Creating midterm exam…';
-    S._tpProgress = 60;
-    R();
-    const midterm = await tpCall({ ...base, phase: 'midterm', masterPlan });
-    S.teachPlanPhase = 'Creating final exam…';
-    S._tpProgress = 68;
-    R();
-    const final_ = await tpCall({ ...base, phase: 'final', masterPlan });
-    const exams = { midterm: midterm?.midterm || midterm, final: final_?.final || final_ };
+    // Phase: Exams — split into midterm + final (continue on error)
+    let midterm = { mc: [], sa: [] };
+    let final_ = { mc: [], essays: [] };
+    try {
+      S.teachPlanPhase = 'Creating midterm exam…';
+      S._tpProgress = 60;
+      R();
+      const midResult = await tpCall({ ...base, phase: 'midterm', masterPlan });
+      midterm = midResult?.midterm || midResult || midterm;
+    } catch (e) { console.log('Midterm generation failed (content filter?):', e.message); }
+    try {
+      S.teachPlanPhase = 'Creating final exam…';
+      S._tpProgress = 68;
+      R();
+      const finResult = await tpCall({ ...base, phase: 'final', masterPlan });
+      final_ = finResult?.final || finResult || final_;
+    } catch (e) { console.log('Final generation failed (content filter?):', e.message); }
+    const exams = { midterm, final: final_ };
 
-    // Phase: Quizzes + Writing Assignments — one week at a time
+    // Phase: Quizzes + Writing Assignments — one week at a time (continue on error)
     const allQuizzes = [];
     for (let w = 1; w <= totalWeeks; w++) {
-      S.teachPlanPhase = `Generating quiz & writing assignment: week ${w}/${totalWeeks}…`;
-      S._tpProgress = 70 + Math.round((w / totalWeeks) * 15);
-      R();
-      const qz = await tpCall({ ...base, phase: 'quizzes', weeks: [w], masterPlan, schedule: r.schedule });
-      const qzObj = Array.isArray(qz) ? qz[0] : qz;
-      if (qzObj) allQuizzes.push(qzObj);
+      try {
+        S.teachPlanPhase = `Generating quiz & writing: week ${w}/${totalWeeks}…`;
+        S._tpProgress = 70 + Math.round((w / totalWeeks) * 15);
+        R();
+        const qz = await tpCall({ ...base, phase: 'quizzes', weeks: [w], masterPlan, schedule: r.schedule });
+        const qzObj = Array.isArray(qz) ? qz[0] : qz;
+        if (qzObj) allQuizzes.push(qzObj);
+      } catch (e) { console.log('Quiz week ' + w + ' failed:', e.message); allQuizzes.push({ week: w, questions: [], writing: null }); }
     }
 
     // Phase: Bible Passages
