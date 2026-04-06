@@ -41,7 +41,7 @@ async function callClaude({ model = 'claude-haiku-4-5', maxTokens = 4000, system
   console.log('callClaude start:', model, 'maxTokens:', maxTokens, 'promptLen:', prompt.length);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s to stay under Netlify 10s limit
 
   let resp;
   try {
@@ -93,9 +93,24 @@ async function callClaude({ model = 'claude-haiku-4-5', maxTokens = 4000, system
     if (text[i] === startChar) depth++;
     else if (text[i] === endChar) { depth--; if (depth === 0) { endIdx = i; break; } }
   }
-  if (endIdx === -1) throw new Error('AI response JSON was truncated');
+  if (endIdx === -1) {
+    console.log('Truncated JSON, raw text:', text.slice(0, 500));
+    throw new Error('AI response JSON was truncated');
+  }
 
-  return JSON.parse(text.slice(startIdx, endIdx + 1));
+  const jsonStr = text.slice(startIdx, endIdx + 1);
+  try {
+    return JSON.parse(jsonStr);
+  } catch (parseErr) {
+    console.log('JSON parse failed, attempting repair. Raw:', jsonStr.slice(0, 300));
+    // Try to repair: remove trailing commas before } or ]
+    const repaired = jsonStr.replace(/,\s*([}\]])/g, '$1');
+    try {
+      return JSON.parse(repaired);
+    } catch (e) {
+      throw new Error('JSON parse error: ' + parseErr.message + ' | first 200 chars: ' + jsonStr.slice(0, 200));
+    }
+  }
 }
 
 // ── Phase 1: Master Plan ───────────────────────────────────────────────────
@@ -158,10 +173,10 @@ ${slos.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 WEEK PLANS:
 ${weekDetails}
 
-TASK: For each week, write: lc=300-500 word lecture narrative (Christ-centered, reference Bible), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
+TASK: For each week, write: lc=200-300 word lecture (Christ-centered), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
 [{"week":1,"lc":"...","kt":[{"t":"term","d":"def"}],"dp":["?","?"],"an":"..."},...]`;
 
-  const result = await callClaude({ maxTokens: 4000, prompt });
+  const result = await callClaude({ maxTokens: 2500, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
@@ -182,11 +197,11 @@ async function exams(body) {
 SLOs: ${slos.map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
 Topics: ${topics}
 
-Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). Output JSON only:
-{"midterm":{"mc":[15 items: {"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1","x":"why"}],"sa":[3 items: {"q":"?","ea":"expected","p":10,"s":"SLO 1"}]},"final":{"mc":[15 items same format],"essays":[2 items: {"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","p":"23-25","d":"..."},{"l":"Proficient","p":"18-22","d":"..."},{"l":"Developing","p":"12-17","d":"..."},{"l":"Beginning","p":"0-11","d":"..."}]}]}}
-Ultra-compact keys. Exactly 15 MC each.`;
+Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). JSON only:
+{"midterm":{"mc":[10 items:{"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1"}],"sa":[2 items:{"q":"?","ea":"short","p":10,"s":"SLO 1"}]},"final":{"mc":[10 items same],"essays":[1 item:{"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","d":"..."},{"l":"Proficient","d":"..."},{"l":"Developing","d":"..."},{"l":"Beginning","d":"..."}]}]}}
+Compact. 10 MC each exam.`;
 
-  const result = await callClaude({ maxTokens: 6000, prompt });
+  const result = await callClaude({ maxTokens: 3000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
@@ -213,18 +228,12 @@ COURSE: ${course.title}
 WEEKS TO GENERATE:
 ${weekDetails}
 
-TASK: For each week, create exactly 10 multiple choice questions.
-- 4 options each (A, B, C, D)
-- Mix difficulty: 4 recall, 4 application, 2 analysis
-- Include questions about Bible passage content
-- Indicate correct answer and brief explanation
-
-Output JSON array:
-[{"week":1,"questions":[{"q":"...","options":["A","B","C","D"],"answer":"B","explanation":"..."}]}]`;
+TASK: For each week, create 5 MC questions. 4 options, correct answer, brief explanation.
+[{"week":1,"questions":[{"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"why"}]}]`;
 
   const result = await callClaude({
     model: 'claude-haiku-4-5',
-    maxTokens: 8000,
+    maxTokens: 2500,
     prompt,
   });
 

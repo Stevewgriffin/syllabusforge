@@ -1415,7 +1415,7 @@ async function generateTeachPlan() {
     const totalWeeks = parseInt(c.weeks) || 15;
     const weekNums = Array.from({length: totalWeeks}, (_, i) => i + 1);
     const batches = [];
-    for (let i = 0; i < weekNums.length; i += 4) {
+    for (let i = 0; i < weekNums.length; i += 2) {
       batches.push(weekNums.slice(i, i + 4));
     }
 
@@ -1436,7 +1436,7 @@ async function generateTeachPlan() {
 
     // Phase: Quizzes (batches of 5 weeks)
     const quizBatches = [];
-    for (let i = 0; i < weekNums.length; i += 5) {
+    for (let i = 0; i < weekNums.length; i += 3) {
       quizBatches.push(weekNums.slice(i, i + 5));
     }
     const allQuizzes = [];
