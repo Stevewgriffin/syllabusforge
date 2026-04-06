@@ -1,8 +1,6 @@
 // Phase-based teaching plan generator.
-// Each call handles one phase of content generation to stay within Netlify function timeouts.
+// Uses direct fetch to Anthropic API (no SDK) for fast cold starts.
 // ANTHROPIC_API_KEY must be set in Netlify environment variables.
-
-const Anthropic = require('@anthropic-ai/sdk');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
@@ -19,17 +17,15 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'phase is required' }) };
     }
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     switch (phase) {
       case 'master-plan':
-        return await masterPlan(client, body);
+        return await masterPlan(body);
       case 'week-content':
-        return await weekContent(client, body);
+        return await weekContent(body);
       case 'exams':
-        return await exams(client, body);
+        return await exams(body);
       case 'quizzes':
-        return await quizzes(client, body);
+        return await quizzes(body);
       default:
         return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Unknown phase: ' + phase }) };
     }
@@ -39,16 +35,30 @@ exports.handler = async (event) => {
   }
 };
 
-// ── Helper: call Claude and parse JSON response ────────────────────────────
-async function callClaude(client, { model = 'claude-haiku-4-5', maxTokens = 4000, system, prompt }) {
-  const message = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: system || 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
-    messages: [{ role: 'user', content: prompt }],
+// ── Helper: call Claude via direct fetch (no SDK = fast cold start) ─────────
+async function callClaude({ model = 'claude-haiku-4-5', maxTokens = 4000, system, prompt }) {
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: system || 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
+      messages: [{ role: 'user', content: prompt }],
+    }),
   });
 
-  const text = message.content.map((b) => b.text || '').join('');
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error('Anthropic API error: ' + resp.status + ' ' + err.slice(0, 200));
+  }
+
+  const message = await resp.json();
+  const text = (message.content || []).map((b) => b.text || '').join('');
 
   // Extract outermost balanced {} or [] block
   let startChar = -1, startIdx = -1;
@@ -71,7 +81,7 @@ async function callClaude(client, { model = 'claude-haiku-4-5', maxTokens = 4000
 // ── Phase 1: Master Plan ───────────────────────────────────────────────────
 // Generates enriched outline for all weeks: key concepts, Bible passage refs,
 // teaching objectives, materials mapping.
-async function masterPlan(client, body) {
+async function masterPlan(body) {
   const { course, slos, schedule, assessments, materialsList, scraped } = body;
 
   if (!course || !slos?.length || !schedule?.length) {
@@ -99,14 +109,14 @@ For EACH week output JSON: bible passage refs, 3 key concepts, 1-sentence object
 [{"week":1,"bp":["John 3:16-21"],"kc":["term1","term2","term3"],"obj":"...","act":"..."},...]
 Exactly ${course.weeks} objects. Ultra-compact.`;
 
-  const result = await callClaude(client, { maxTokens: 2000, prompt });
+  const result = await callClaude({ maxTokens: 2000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
 
 // ── Phase 2: Week Content ──────────────────────────────────────────────────
 // Generates detailed teaching narrative for a batch of weeks.
-async function weekContent(client, body) {
+async function weekContent(body) {
   const { course, slos, weeks, masterPlan } = body;
   // weeks = array of week numbers to generate, e.g. [1,2,3,4]
   // masterPlan = array from phase 1
@@ -131,14 +141,14 @@ ${weekDetails}
 TASK: For each week, write: lc=300-500 word lecture narrative (Christ-centered, reference Bible), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
 [{"week":1,"lc":"...","kt":[{"t":"term","d":"def"}],"dp":["?","?"],"an":"..."},...]`;
 
-  const result = await callClaude(client, { maxTokens: 4000, prompt });
+  const result = await callClaude({ maxTokens: 4000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
 
 // ── Phase 3: Exams ─────────────────────────────────────────────────────────
 // Generates midterm and final exam content.
-async function exams(client, body) {
+async function exams(body) {
   const { course, slos, masterPlan } = body;
 
   if (!course || !slos?.length || !masterPlan?.length) {
@@ -156,14 +166,14 @@ Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). Output JSON only:
 {"midterm":{"mc":[15 items: {"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1","x":"why"}],"sa":[3 items: {"q":"?","ea":"expected","p":10,"s":"SLO 1"}]},"final":{"mc":[15 items same format],"essays":[2 items: {"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","p":"23-25","d":"..."},{"l":"Proficient","p":"18-22","d":"..."},{"l":"Developing","p":"12-17","d":"..."},{"l":"Beginning","p":"0-11","d":"..."}]}]}}
 Ultra-compact keys. Exactly 15 MC each.`;
 
-  const result = await callClaude(client, { maxTokens: 6000, prompt });
+  const result = await callClaude({ maxTokens: 6000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
 
 // ── Phase 4: Weekly Quizzes ────────────────────────────────────────────────
 // Generates 10 MC questions per week.
-async function quizzes(client, body) {
+async function quizzes(body) {
   const { course, weeks, masterPlan } = body;
   // weeks = array of week numbers to generate quizzes for (batch of ~5)
 
@@ -192,7 +202,7 @@ TASK: For each week, create exactly 10 multiple choice questions.
 Output JSON array:
 [{"week":1,"questions":[{"q":"...","options":["A","B","C","D"],"answer":"B","explanation":"..."}]}]`;
 
-  const result = await callClaude(client, {
+  const result = await callClaude({
     model: 'claude-haiku-4-5',
     maxTokens: 8000,
     prompt,
