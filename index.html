@@ -1440,15 +1440,31 @@ async function generateTeachPlan() {
       if (obj) masterPlan.push(obj);
     }
 
-    // Phase 2: Week Content — one week at a time
+    // Phase 2: Week Content — two calls per week (lecture + extras)
     const allWeekContent = [];
     for (let w = 1; w <= totalWeeks; w++) {
-      S.teachPlanPhase = `Writing content: week ${w}/${totalWeeks}…`;
-      S._tpProgress = 15 + Math.round((w / totalWeeks) * 40);
+      S.teachPlanPhase = `Writing lecture: week ${w}/${totalWeeks}…`;
+      S._tpProgress = 15 + Math.round((w / totalWeeks) * 30);
       R();
-      const wc = await tpCall({ ...base, phase: 'week-content', weeks: [w], masterPlan, schedule: r.schedule });
-      const wcObj = Array.isArray(wc) ? wc[0] : wc;
-      if (wcObj) allWeekContent.push(wcObj);
+      // Call 1: Lecture only
+      const lc = await tpCall({ ...base, phase: 'week-lecture', weeks: [w], masterPlan, schedule: r.schedule });
+      const lcObj = Array.isArray(lc) ? lc[0] : lc;
+
+      S.teachPlanPhase = `Writing terms & discussion: week ${w}/${totalWeeks}…`;
+      S._tpProgress = 15 + Math.round(((w - 0.5) / totalWeeks) * 30);
+      R();
+      // Call 2: Key terms, discussion, application
+      const ex = await tpCall({ ...base, phase: 'week-extras', weeks: [w], masterPlan, schedule: r.schedule });
+      const exObj = Array.isArray(ex) ? ex[0] : ex;
+
+      // Merge both results
+      allWeekContent.push({
+        week: w,
+        lectureContent: lcObj?.lectureContent || lcObj?.lc || '',
+        keyTerms: (exObj?.keyTerms || exObj?.kt || []).map(t => ({ term: t.term || t.t || '', definition: t.definition || t.d || '' })),
+        discussionPrompts: exObj?.discussionPrompts || exObj?.dp || [],
+        applicationNote: exObj?.applicationNote || exObj?.an || '',
+      });
     }
 
     // Phase: Exams
@@ -1560,7 +1576,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : 2000,
+      max_tokens: body.phase === 'week-lecture' ? 8000 : body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : body.phase === 'week-extras' ? 2000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1612,6 +1628,48 @@ SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}${
 For week ${weekNum}, output ONE JSON object:
 {"week":${weekNum},"bp":["Genesis 1:1-10"],"kc":["concept1","concept2","concept3"],"obj":"Students will...","act":"Activity description"}
 bp=1-2 Bible passage references relevant to this week's topic. kc=3 key concepts. obj=learning objective. act=application activity.`;
+  }
+
+  if (phase === 'week-lecture') {
+    const weekNum = (weeks || [1])[0];
+    const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
+    const bpRefs = (wp.biblePassages || wp.bp || []).join(', ');
+    const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    const reading = sched.reading || '';
+    return `${course.title}|${course.code} — Week ${weekNum} LECTURE ONLY.
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+Bible: ${bpRefs} | Concepts: ${concepts} | Reading: ${reading}${filesContext}
+
+This is a fully asynchronous online course — the lecture IS the primary instruction. No classroom.
+
+Write a 2000-3000 word lecture. TEACH the textbook content from "${reading}". Do NOT say "read chapters X-Y" — present what those chapters cover as if lecturing.
+- If Strauss "Four Portraits, One Jesus": cover his Gospel analysis, synoptic arguments, reliability evidence from those chapters.
+- If Surburg "Intertestamental Period": cover historical events, political changes, religious developments from those chapters.
+- Integrate Bible passage analysis (${bpRefs}) with specific verse references.
+- Reference course files where relevant.
+- Structure: **Introduction**, **Historical/Textual Context**, **Key Arguments from Reading**, **Biblical Analysis**, **Theological Significance**, **Practical Application**
+
+Output ONE JSON object:
+{"week":${weekNum},"lc":"2000-3000 word structured lecture with **Section Headers**"}`;
+  }
+
+  if (phase === 'week-extras') {
+    const weekNum = (weeks || [1])[0];
+    const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
+    const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    const reading = sched.reading || '';
+    return `${course.title}|${course.code} — Week ${weekNum} key terms, discussion, application.
+Topic: ${sched.title || ''} | Reading: ${reading} | Concepts: ${concepts}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+
+Output ONE JSON object with:
+- kt: 7 key terms FROM the assigned reading with definitions as the textbook explains them
+- dp: 3 discussion prompts connecting the reading to Bible passages and personal faith
+- an: Detailed application activity (2-3 sentences) using course files and textbook concepts
+
+{"week":${weekNum},"kt":[{"t":"term","d":"definition from textbook"},{"t":"t2","d":"d2"},{"t":"t3","d":"d3"},{"t":"t4","d":"d4"},{"t":"t5","d":"d5"},{"t":"t6","d":"d6"},{"t":"t7","d":"d7"}],"dp":["Question 1?","Question 2?","Question 3?"],"an":"Application activity."}`;
   }
 
   if (phase === 'week-content') {
