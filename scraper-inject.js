@@ -127,12 +127,57 @@
       }
     });
 
-    // File links
-    var fileEls = document.querySelectorAll('a[href*=".pdf"],a[href*=".doc"],a[href*=".docx"],a[href*="download"],a[href*="file"],[class*="attachment"],[class*="file-row"],[class*="document"]');
+    // File links — broad detection for Populi and other LMS platforms
+    // Populi uses internal URLs (no file extension in href), so we check link TEXT for extensions
+    var fileExtPattern = /\.(pdf|docx?|pptx?|xlsx?|csv|txt|rtf|jpe?g|png|gif|mp4|mp3|zip)$/i;
+    var seenFileUrls = {};
+
+    // Strategy 1: Links with file extensions in the href (standard sites)
+    var hrefSelectors = 'a[href*=".pdf"],a[href*=".doc"],a[href*=".docx"],a[href*=".pptx"],a[href*=".xlsx"],a[href*="download"],a[href*="/file"]';
+    // Strategy 2: Links with file extensions in the text (Populi-style)
+    // Strategy 3: Links inside table rows (Populi Files tab)
+    // Strategy 4: Elements with file-related class names
+    var classSelectors = '[class*="attachment"],[class*="file-row"],[class*="document"],[class*="file-name"]';
+
+    // Gather from href-based and class-based selectors
+    var fileEls = document.querySelectorAll(hrefSelectors + ',' + classSelectors);
     fileEls.forEach(function (el) {
       var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
       var href = el.href || '';
-      if (name && name.length < 200 && href) result.files.push({ name: name, url: href });
+      if (name && name.length < 200 && href && !seenFileUrls[href]) {
+        seenFileUrls[href] = true;
+        result.files.push({ name: name, url: href });
+      }
+    });
+
+    // Scan ALL links on the page — if the link text looks like a filename, grab it
+    document.querySelectorAll('a[href]').forEach(function (el) {
+      var href = el.href || '';
+      if (!href || seenFileUrls[href]) return;
+      var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
+      if (!name || name.length > 200) return;
+      // Check if the link text contains a file extension
+      if (fileExtPattern.test(name)) {
+        seenFileUrls[href] = true;
+        result.files.push({ name: name, url: href });
+      }
+    });
+
+    // Populi-specific: scan table rows in the Files tab for file entries
+    // Populi shows files in a table with columns: Name, Kind, Size, Date Added
+    document.querySelectorAll('table tr, [class*="file-list"] tr, [class*="files"] tr').forEach(function (tr) {
+      var link = tr.querySelector('a[href]');
+      if (!link) return;
+      var href = link.href || '';
+      if (!href || seenFileUrls[href]) return;
+      var name = clean(link.innerText || '');
+      // Check if the row has a "Kind" or "Size" column suggesting it's a file row
+      var rowText = clean(tr.innerText || '');
+      var isFileRow = /\b(word|pdf|image|excel|powerpoint|document|jpeg|png|gif|kb|mb)\b/i.test(rowText);
+      if (name && name.length < 200 && isFileRow) {
+        seenFileUrls[href] = true;
+        result.files.push({ name: name, url: href });
+      }
     });
 
     // Lessons / weeks
@@ -187,11 +232,19 @@
 
   // ── Download a single file as blob ───────────────────────────────────────────
   function downloadFile(url) {
-    return fetch(url, { credentials: 'same-origin' })
-      .then(function (resp) {
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        return resp.blob();
-      });
+    return fetch(url, {
+      credentials: 'same-origin',
+      redirect: 'follow',
+      headers: { 'Accept': '*/*' }
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      // Check if we got HTML instead of a file (login redirect or error page)
+      var ct = resp.headers.get('content-type') || '';
+      if (ct.includes('text/html') && !url.match(/\.html?$/i)) {
+        throw new Error('Got HTML instead of file (possible login redirect)');
+      }
+      return resp.blob();
+    });
   }
 
   // ── Trigger browser download of a blob ───────────────────────────────────────
