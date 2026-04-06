@@ -1452,6 +1452,28 @@ async function generateTeachPlan() {
     S.teachPlanPhase = 'Fetching ESV Bible passages…';
     S._tpProgress = 90;
     R();
+    // Normalize compact keys from all phases
+    for (const w of masterPlan) {
+      w.biblePassages = w.biblePassages || w.bp || [];
+      w.keyConcepts = w.keyConcepts || w.kc || [];
+      w.teachingObjective = w.teachingObjective || w.obj || '';
+      w.applicationActivity = w.applicationActivity || w.act || '';
+    }
+    for (const w of allWeekContent) {
+      w.lectureContent = w.lectureContent || w.lc || '';
+      w.keyTerms = (w.keyTerms || w.kt || []).map(t => ({ term: t.term || t.t || '', definition: t.definition || t.d || '' }));
+      w.discussionPrompts = w.discussionPrompts || w.dp || [];
+      w.applicationNote = w.applicationNote || w.an || '';
+    }
+    if (exams.midterm) {
+      exams.midterm.mc = (exams.midterm.mc || []).map(q => ({ q: q.q, options: q.options || q.o || [], answer: q.answer || q.a || '', slo: q.slo || q.s || '', explanation: q.explanation || q.x || '' }));
+      exams.midterm.shortAnswer = (exams.midterm.shortAnswer || exams.midterm.sa || []).map(q => ({ q: q.q, expectedAnswer: q.expectedAnswer || q.ea || '', points: q.points || q.p || 10, slo: q.slo || q.s || '' }));
+    }
+    if (exams.final) {
+      exams.final.mc = (exams.final.mc || []).map(q => ({ q: q.q, options: q.options || q.o || [], answer: q.answer || q.a || '', slo: q.slo || q.s || '', explanation: q.explanation || q.x || '' }));
+      exams.final.essays = (exams.final.essays || []).map(q => ({ prompt: q.prompt || q.pr || '', points: q.points || q.p || 25, slo: q.slo || q.s || '', rubric: (q.rubric || []).map(r => ({ level: r.level || r.l || '', points: r.points || r.p || '', description: r.description || r.d || '' })) }));
+    }
+
     const allPassageRefs = masterPlan.flatMap(w => w.biblePassages || []).filter(Boolean);
     let biblePassages = {};
     if (allPassageRefs.length > 0) {

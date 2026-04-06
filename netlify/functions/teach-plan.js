@@ -90,32 +90,16 @@ async function masterPlan(client, body) {
   if (materialsList) matContext.push('Required materials:\n' + materialsList.slice(0, 600));
   if (scraped?.books?.length) matContext.push('Books: ' + scraped.books.slice(0, 10).join('; '));
 
-  const prompt = `You are designing a fully asynchronous online course for Williamson College (Christ-centered, SACSCOC accredited).
+  const prompt = `Christ-centered async course, Williamson College.
+COURSE: ${course.title}|${course.code}|${course.weeks}wk
+SLOs: ${slos.map((s, i) => (i + 1) + '.' + s.slice(0, 50)).join('; ')}
+SCHEDULE: ${schedule.map(w => 'W' + w.week + ':' + (w.title || '') + '|' + (w.reading || '')).join('; ')}
 
-COURSE: ${course.title} | ${course.code} | ${course.creditHours} credits | ${course.weeks} weeks
-${(course.description || '').slice(0, 200)}
+For EACH week output JSON: bible passage refs, 3 key concepts, 1-sentence objective, 1-sentence activity.
+[{"week":1,"bp":["John 3:16-21"],"kc":["term1","term2","term3"],"obj":"...","act":"..."},...]
+Exactly ${course.weeks} objects. Ultra-compact.`;
 
-SLOs:
-${slos.map((s, i) => `${i + 1}. ${s}`).join('\n')}
-
-EXISTING SCHEDULE (from syllabus generation):
-${scheduleText}
-
-ASSESSMENTS:
-${assessmentText}
-
-${matContext.join('\n')}
-
-TASK: Create a master teaching plan. For EACH week, provide:
-- biblePassages: array of 1-2 relevant Bible passage references (e.g., "John 3:16-21", "Romans 8:1-11"). Choose passages directly relevant to that week's topic.
-- keyConcepts: array of 3-5 key terms/concepts students must learn
-- teachingObjective: one sentence describing what students will understand by end of week
-- applicationActivity: brief description of a practical activity
-
-Output JSON array with ${course.weeks} objects:
-[{"week":1,"biblePassages":["ref"],"keyConcepts":["term"],"teachingObjective":"...","applicationActivity":"..."},...]`;
-
-  const result = await callClaude(client, { maxTokens: 4000, prompt });
+  const result = await callClaude(client, { maxTokens: 2000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
@@ -144,16 +128,10 @@ ${slos.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 WEEK PLANS:
 ${weekDetails}
 
-TASK: For each week listed, write:
-- lectureContent: 500-800 word teaching narrative. Write as if lecturing to students. Reference the Bible passages. Connect to the key concepts. Christ-centered perspective.
-- keyTerms: array of objects [{term, definition}] for 3-5 key terms
-- discussionPrompts: array of 2-3 thoughtful discussion questions (15-25 words each) with SLO alignment
-- applicationNote: 2-3 sentences describing a practical application exercise
+TASK: For each week, write: lc=300-500 word lecture narrative (Christ-centered, reference Bible), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
+[{"week":1,"lc":"...","kt":[{"t":"term","d":"def"}],"dp":["?","?"],"an":"..."},...]`;
 
-Output JSON array:
-[{"week":1,"lectureContent":"...","keyTerms":[{"term":"...","definition":"..."}],"discussionPrompts":["..."],"applicationNote":"..."},...]`;
-
-  const result = await callClaude(client, { maxTokens: 8000, prompt });
+  const result = await callClaude(client, { maxTokens: 4000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
@@ -168,47 +146,17 @@ async function exams(client, body) {
   }
 
   const midWeek = Math.ceil(masterPlan.length / 2);
-  const midTopics = masterPlan.filter(w => w.week <= midWeek).map(w => `Week ${w.week}: ${(w.keyConcepts || []).join(', ')}`).join('\n');
-  const allTopics = masterPlan.map(w => `Week ${w.week}: ${(w.keyConcepts || []).join(', ')}`).join('\n');
+  const topics = masterPlan.map(w => 'W' + w.week + ':' + (w.kc || w.keyConcepts || []).slice(0, 2).join(',')).join('; ');
 
-  const prompt = `You are creating exams for an asynchronous course at Williamson College (Christ-centered, SACSCOC accredited).
+  const prompt = `Christ-centered Bible course exams. ${course.title}|${course.code}
+SLOs: ${slos.map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+Topics: ${topics}
 
-COURSE: ${course.title} | ${course.code}
+Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). Output JSON only:
+{"midterm":{"mc":[15 items: {"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1","x":"why"}],"sa":[3 items: {"q":"?","ea":"expected","p":10,"s":"SLO 1"}]},"final":{"mc":[15 items same format],"essays":[2 items: {"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","p":"23-25","d":"..."},{"l":"Proficient","p":"18-22","d":"..."},{"l":"Developing","p":"12-17","d":"..."},{"l":"Beginning","p":"0-11","d":"..."}]}]}}
+Ultra-compact keys. Exactly 15 MC each.`;
 
-SLOs:
-${slos.map((s, i) => `${i + 1}. ${s}`).join('\n')}
-
-MIDTERM covers weeks 1-${midWeek}:
-${midTopics}
-
-FINAL covers ALL weeks 1-${masterPlan.length}:
-${allTopics}
-
-TASK: Create both exams.
-
-MIDTERM:
-- 30 multiple choice questions (4 options each, indicate correct answer)
-- 3 short answer questions (with expected answer outline)
-- Map each question to an SLO
-
-FINAL:
-- 30 multiple choice questions (4 options each, indicate correct answer)
-- 2 essay prompts with detailed rubrics (4 levels: Excellent/Proficient/Developing/Beginning with point values and descriptions)
-- Map each question to an SLO
-
-Output JSON:
-{
-  "midterm": {
-    "mc": [{"q":"...","options":["A","B","C","D"],"answer":"A","slo":"SLO 1","explanation":"..."}],
-    "shortAnswer": [{"q":"...","expectedAnswer":"...","points":10,"slo":"SLO 1"}]
-  },
-  "final": {
-    "mc": [{"q":"...","options":["A","B","C","D"],"answer":"A","slo":"SLO 1","explanation":"..."}],
-    "essays": [{"prompt":"...","points":25,"slo":"SLO 1","rubric":[{"level":"Excellent","points":"23-25","description":"..."},{"level":"Proficient","points":"18-22","description":"..."},{"level":"Developing","points":"12-17","description":"..."},{"level":"Beginning","points":"0-11","description":"..."}]}]
-  }
-}`;
-
-  const result = await callClaude(client, { maxTokens: 8000, prompt });
+  const result = await callClaude(client, { maxTokens: 6000, prompt });
 
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(result) };
 }
