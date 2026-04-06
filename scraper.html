@@ -150,9 +150,122 @@ code { background: #F0ECE3; border-radius: 4px; padding: 2px 6px; font-size: 12p
 </div>
 
 <script>
-// Bookmarklet loads the external inject script from SyllabusForge.
-// This allows updates without users needing to re-drag the bookmarklet.
-const bookmarkletCode = "(function(){var s=document.createElement('script');s.src='https://syllabusforge.netlify.app/scraper-inject.js?v='+Date.now();document.head.appendChild(s);})()";
+// Inline bookmarklet — all code runs directly in the Populi page context.
+// Must be self-contained because Populi's CSP may block external script loads.
+const bookmarkletCode = `(function(){
+  function clean(s){return(s||'').replace(/\\s+/g,' ').trim()}
+  function getText(el){return el?clean(el.innerText||el.textContent||''):''}
+
+  /* Detect Populi */
+  var isPopuli=!!document.querySelector('tr.js-file_row')||window.location.hostname.indexOf('populiweb')>-1;
+  if(!isPopuli){alert('Run this bookmarklet on a Populi course page (Files, Lessons, or Syllabus tab).');return;}
+
+  /* Scrape metadata */
+  var result={url:window.location.href,scrapedAt:new Date().toISOString(),pageTitle:getText(document.querySelector('h1.course_offering_name'))||document.title,courseInfo:{},syllabus:'',books:[],files:[],lessons:[],rawSections:[]};
+
+  /* Course code */
+  var codeMatch=(result.pageTitle||'').match(/\\b([A-Z]{2,4})\\s*(\\d{3,4})\\b/);
+  var courseCode=codeMatch?codeMatch[1]+codeMatch[2]:'COURSE';
+
+  /* Info sections */
+  document.querySelectorAll('[class*="course-info"],[class*="meta"]').forEach(function(el){var t=getText(el);if(t&&t.length<300)result.rawSections.push({type:'info',text:t});});
+
+  /* Syllabus/description */
+  document.querySelectorAll('[class*="syllabus"],[class*="description"],[class*="content-area"],main,article').forEach(function(el){var t=getText(el);if(t&&t.length>100){result.rawSections.push({type:'content',text:t.slice(0,3000)});if(!result.syllabus&&t.length>200)result.syllabus=t.slice(0,5000);}});
+
+  /* Books */
+  document.querySelectorAll('[class*="book"],[class*="textbook"],[class*="material"],[class*="resource"]').forEach(function(el){var t=getText(el);if(t&&t.length>5&&t.length<500){result.books.push(t);result.rawSections.push({type:'book',text:t});}});
+
+  /* Populi file rows */
+  var coMatch=window.location.href.match(/courseofferings\\/(\\d+)/);
+  var coId=coMatch?coMatch[1]:'';
+  document.querySelectorAll('tr.js-file_row').forEach(function(tr){
+    var cb=tr.querySelector('input.js-file_checkbox');
+    var ns=tr.querySelector('.js-name');
+    if(!cb||!ns)return;
+    var fid=cb.value,name=clean(ns.textContent||'');
+    if(!name||!fid)return;
+    var dlUrl=coId?window.location.origin+'/router/courseofferings/'+coId+'/folders/download?files%5B%5D='+fid:window.location.origin+'/router/files/'+fid+'/show';
+    var sz=parseInt(tr.getAttribute('data-size')||'0',10);
+    result.files.push({name:name,url:dlUrl,fileId:fid,size:sz});
+  });
+
+  /* Lessons */
+  document.querySelectorAll('[class*="lesson"],[class*="week"],[class*="module"],li[class*="item"]').forEach(function(el){var t=getText(el);if(t&&t.length>5&&t.length<600)result.lessons.push(t);});
+
+  /* Tables */
+  document.querySelectorAll('table').forEach(function(tbl){var rows=Array.from(tbl.querySelectorAll('tr')).map(function(tr){return Array.from(tr.querySelectorAll('th,td')).map(function(td){return clean(td.innerText||'');});});if(rows.length>0)result.rawSections.push({type:'table',rows:rows});});
+
+  /* Headings */
+  result.rawSections.push({type:'headings',items:Array.from(document.querySelectorAll('h1,h2,h3,h4')).map(function(h){return{level:h.tagName,text:getText(h)};}).filter(function(h){return h.text.length>1;})});
+
+  /* Dedupe */
+  result.books=result.books.filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+  result.lessons=result.lessons.filter(function(v,i,a){return v&&a.indexOf(v)===i;}).slice(0,60);
+
+  /* Ask for course code */
+  var userCode=prompt('SyllabusForge Scraper\\n\\nCourse code?',courseCode);
+  if(userCode===null)return;
+  courseCode=(userCode.trim()||courseCode).replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+
+  /* Download metadata JSON */
+  var metaName='populi-scrape-'+courseCode+'-'+Date.now()+'.json';
+  var metaBlob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(metaBlob);a.download=metaName;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
+
+  var fileCount=result.files.length;
+  if(fileCount===0){alert('Scrape complete! Metadata saved ('+metaName+').\\n\\nNo downloadable files found on this page.\\nTry running on the Files tab.');return;}
+
+  /* Load JSZip and download files */
+  var s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+  s.onload=function(){downloadFiles(result,courseCode,metaName);};
+  s.onerror=function(){alert('Scrape complete! Metadata saved.\\nCould not load JSZip for file download — files not bundled.');};
+  document.head.appendChild(s);
+
+  function downloadFiles(result,courseCode,metaName){
+    var zip=new JSZip();
+    var folder=zip.folder(courseCode+'-materials');
+    folder.file('_metadata.json',JSON.stringify(result,null,2));
+    var files=result.files;
+    var done=0,failed=0,total=files.length;
+
+    /* Create progress overlay */
+    var ov=document.createElement('div');
+    ov.id='sf-ov';
+    ov.style.cssText='position:fixed;bottom:20px;right:20px;width:360px;background:#1E2D4A;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:999999;font-family:system-ui,sans-serif;color:#fff;padding:16px;';
+    ov.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:8px">📚 SyllabusForge Scraper</div><div id="sf-st" style="font-size:12px;color:#8BA3C7">Downloading files...</div><div style="background:rgba(255,255,255,.15);border-radius:6px;height:8px;margin:8px 0;overflow:hidden"><div id="sf-pb" style="height:100%;background:#B8721D;border-radius:6px;width:0%;transition:width .3s"></div></div><div id="sf-lg" style="font-size:11px;color:#8BA3C7;max-height:100px;overflow-y:auto"></div>';
+    document.body.appendChild(ov);
+    var stEl=document.getElementById('sf-st'),pbEl=document.getElementById('sf-pb'),lgEl=document.getElementById('sf-lg');
+    function log(m){var d=document.createElement('div');d.textContent=m;lgEl.appendChild(d);lgEl.scrollTop=lgEl.scrollHeight;}
+
+    function next(i){
+      if(i>=total){
+        stEl.textContent='Building ZIP...';
+        zip.generateAsync({type:'blob',compression:'DEFLATE'}).then(function(blob){
+          var zn=courseCode+'-materials.zip';
+          var a2=document.createElement('a');a2.href=URL.createObjectURL(blob);a2.download=zn;document.body.appendChild(a2);a2.click();document.body.removeChild(a2);URL.revokeObjectURL(a2.href);
+          ov.innerHTML='<div style="text-align:center;padding:12px"><div style="font-size:32px;margin-bottom:6px">✅</div><div style="font-weight:700;font-size:14px">Scrape Complete!</div><div style="font-size:12px;color:#8BA3C7;margin:8px 0"><div>📦 '+zn+' — '+done+' files</div><div>📋 '+metaName+'</div>'+(failed?'<div style=color:#E54>⚠ '+failed+' failed</div>':'')+'</div><button onclick="this.closest(\\'#sf-ov\\').remove()" style="background:#B8721D;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Close</button></div>';
+        });
+        return;
+      }
+      var f=files[i];
+      pbEl.style.width=Math.round((i+1)/total*100)+'%';
+      stEl.textContent='Downloading '+(i+1)+'/'+total+': '+f.name.slice(0,35);
+      fetch(f.url,{credentials:'same-origin',redirect:'follow'}).then(function(r){
+        if(!r.ok)throw new Error('HTTP '+r.status);
+        var ct=r.headers.get('content-type')||'';
+        if(ct.indexOf('text/html')>-1&&!/\\.html?$/i.test(f.name))throw new Error('Got HTML (login redirect?)');
+        return r.blob();
+      }).then(function(blob){
+        var fn=f.name.replace(/[^a-zA-Z0-9._\\- ]/g,'').replace(/\\s+/g,'_').slice(0,100)||'file_'+i;
+        folder.file(fn,blob);done++;log('✓ '+fn);
+        next(i+1);
+      }).catch(function(e){failed++;log('✗ '+f.name+' — '+e.message);next(i+1);});
+    }
+    next(0);
+  }
+})();`;
 
 document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(bookmarkletCode);
 
