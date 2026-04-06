@@ -40,7 +40,7 @@ exports.handler = async (event) => {
 };
 
 // ── Helper: call Claude and parse JSON response ────────────────────────────
-async function callClaude(client, { model = 'claude-sonnet-4-20250514', maxTokens = 4000, system, prompt }) {
+async function callClaude(client, { model = 'claude-haiku-4-5', maxTokens = 4000, system, prompt }) {
   const message = await client.messages.create({
     model,
     max_tokens: maxTokens,
