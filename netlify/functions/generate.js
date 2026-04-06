@@ -1,7 +1,6 @@
 // Proxies the course generation request to the Anthropic API.
+// Uses direct fetch (no SDK) for fast cold starts on Netlify.
 // ANTHROPIC_API_KEY must be set in Netlify environment variables.
-
-const Anthropic = require('@anthropic-ai/sdk');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -19,8 +18,6 @@ exports.handler = async (event) => {
       };
     }
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     // Build message content: optional PDF documents + text prompt
     const content = [];
 
@@ -34,8 +31,6 @@ exports.handler = async (event) => {
     }
 
     // Additional files:
-    // - PDFs: list filenames only in prompt (sending 20+ PDFs as native docs overflows context)
-    // - Text-extracted files (DOCX, PPTX, XLSX, TXT): include extracted content in prompt
     const textFiles = [];
     const pdfFileNames = [];
     for (const f of files) {
@@ -48,14 +43,29 @@ exports.handler = async (event) => {
 
     content.push({ type: 'text', text: buildPrompt(course, slos, pdfFileNames, scraped, materialsList, syllabusDoc, textFiles) });
 
-    const message = await client.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 3000,
-      system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences. Never truncate.',
-      messages: [{ role: 'user', content }],
+    // Direct fetch to Anthropic API (no SDK = fast cold start)
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 3000,
+        system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences. Never truncate.',
+        messages: [{ role: 'user', content }],
+      }),
     });
 
-    const text = message.content.map((b) => b.text || '').join('');
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error('Anthropic API: ' + resp.status + ' ' + errText.slice(0, 200));
+    }
+
+    const message = await resp.json();
+    const text = (message.content || []).map((b) => b.text || '').join('');
 
     // Extract outermost balanced {} block
     const start = text.indexOf('{');
@@ -127,7 +137,6 @@ function buildPrompt(course, slos, pdfFileNames = [], scraped, materialsList, sy
   if (scraped?.books?.length) matParts.push(`Populi books: ${scraped.books.slice(0, 8).join('; ')}`);
   if (scraped?.lessons?.length) matParts.push(`Populi weekly structure: ${scraped.lessons.slice(0, 10).join('; ')}`);
   if (pdfFileNames.length > 0) matParts.push(`Uploaded PDF files (use titles as reading sources):\n${pdfFileNames.map(n => `- ${n}`).join('\n')}`);
-  // Text-extracted files (Word, PPT, Excel) — include content, capped per file
   for (const f of textFiles.slice(0, 8)) {
     matParts.push(`UPLOADED FILE: ${f.name}\n${f.text.slice(0, 2000)}`);
   }
