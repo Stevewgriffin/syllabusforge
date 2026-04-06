@@ -1530,7 +1530,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: 3000,
+      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'week-content' ? 4000 : 4000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
