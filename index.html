@@ -1575,8 +1575,8 @@ async function tpCall(body) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'week-lecture' ? 8000 : body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : body.phase === 'week-extras' ? 2000 : 2000,
+      model: (body.phase === 'week-lecture' || body.phase === 'exams') ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5',
+      max_tokens: body.phase === 'week-lecture' ? 8000 : body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : body.phase === 'week-extras' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
