@@ -1564,7 +1564,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'week-content' ? 4000 : body.phase === 'quizzes' ? 3000 : 2000,
+      max_tokens: body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1631,13 +1631,19 @@ SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
 Bible passages: ${bpRefs} | Key concepts: ${concepts}
 ASSIGNED READING: ${reading}${filesContext}
 
-CRITICAL INSTRUCTION: The lecture MUST integrate substantive content from the assigned reading. Do NOT just say "read chapters X-Y." Instead, summarize key arguments, frameworks, evidence, and insights from those chapters as if you are teaching from the textbook. Students should learn the core material from the lecture itself. Include specific concepts, terminology, and arguments the author makes. If the reading is from "Four Portraits, One Jesus" by Strauss, cover his analysis of Gospel portraits, synoptic relationships, and historical reliability arguments from those chapters. If from "Introduction to the Intertestamental Period" by Surburg, cover the historical events, political changes, and religious developments from those chapters.
+CRITICAL: This is a fully asynchronous online course — the lecture IS the primary instruction. Students have no classroom time. Write as if you are the professor delivering the content.
 
-Also reference Bible passages and course files (maps, charts, documents) where relevant.
+The lecture MUST:
+1. TEACH the textbook content — summarize key arguments, frameworks, evidence from the assigned chapters. Do NOT say "read chapters X-Y." Instead, present what those chapters cover.
+2. If reading is from "Four Portraits, One Jesus" (Strauss): cover his Gospel analysis, synoptic relationships, historical reliability arguments, and distinctive portraits from those specific chapters.
+3. If reading is from "Introduction to the Intertestamental Period" (Surburg): cover the historical events, political changes, religious developments from those chapters.
+4. Integrate Bible passage analysis — quote or reference specific verses, explain their significance.
+5. Reference course files (maps, charts, documents) where relevant.
+6. Structure with clear sections: Introduction, Historical/Textual Context, Key Arguments from Reading, Biblical Analysis, Theological Significance, Practical Application.
 
 Output ONE JSON object for week ${weekNum}:
-{"week":${weekNum},"lc":"500-700 word lecture that teaches the textbook content, references Bible passages, and points to course files","kt":[{"t":"term from reading","d":"definition as textbook explains it"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"},{"t":"term4","d":"def4"},{"t":"term5","d":"def5"}],"dp":["Discussion question connecting reading to Bible passage?","Question applying textbook concepts to faith?"],"an":"Application activity using course files and textbook concepts."}
-lc=lecture (500-700 words, substantive textbook content), kt=5 key terms FROM the reading, dp=discussion prompts, an=application note.`;
+{"week":${weekNum},"lc":"2000-3000 word structured lecture with sections marked by **Section Title**. Teach the textbook content. Analyze Bible passages. Reference course files.","kt":[{"t":"term","d":"definition as textbook explains"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"},{"t":"term4","d":"def4"},{"t":"term5","d":"def5"},{"t":"term6","d":"def6"},{"t":"term7","d":"def7"}],"dp":["Deep discussion question connecting reading to Bible?","Question requiring textbook analysis?","Application question for personal faith?"],"an":"Detailed application activity (2-3 sentences) using course files and textbook concepts."}
+lc=LONG lecture (2000-3000 words, structured, substantive), kt=7 key terms from reading, dp=3 discussion prompts, an=application.`;
   }
 
   if (phase === 'exams') {
