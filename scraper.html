@@ -204,48 +204,61 @@ const bookmarkletCode = `(function(){
   result.lessons=result.lessons.filter(function(v,i,a){return v&&a.indexOf(v)===i;}).slice(0,60);
 
   /* Ask for course code */
-  var userCode=prompt('SyllabusForge Scraper\\n\\nCourse code?',courseCode);
+  var userCode=prompt('SyllabusForge Scraper\\n\\nCourse code?\\nFound '+result.files.length+' files on this page.',courseCode);
   if(userCode===null)return;
   courseCode=(userCode.trim()||courseCode).replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
 
-  /* Download metadata JSON */
-  var metaName='populi-scrape-'+courseCode+'-'+Date.now()+'.json';
-  var metaBlob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});
-  var a=document.createElement('a');a.href=URL.createObjectURL(metaBlob);a.download=metaName;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
-
   var fileCount=result.files.length;
-  if(fileCount===0){alert('Scrape complete! Metadata saved ('+metaName+').\\n\\nNo downloadable files found on this page.\\nTry running on the Files tab.');return;}
+  var metaName='populi-scrape-'+courseCode+'-'+Date.now()+'.json';
 
-  /* Load JSZip and download files */
+  /* Store blobs globally so download buttons can access them */
+  window._sfMetaBlob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});
+  window._sfMetaName=metaName;
+  window._sfDownload=function(blob,name){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(a.href);},5000);};
+
+  /* Create overlay */
+  var ov=document.createElement('div');
+  ov.id='sf-ov';
+  ov.style.cssText='position:fixed;bottom:20px;right:20px;width:380px;background:#1E2D4A;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:999999;font-family:system-ui,sans-serif;color:#fff;padding:16px;';
+  document.body.appendChild(ov);
+
+  if(fileCount===0){
+    ov.innerHTML='<div style="text-align:center;padding:12px"><div style="font-size:32px;margin-bottom:6px">📋</div><div style="font-weight:700;font-size:14px">Scrape Complete</div><div style="font-size:12px;color:#8BA3C7;margin:8px 0">No downloadable files found. Try the Files tab.</div><button onclick="window._sfDownload(window._sfMetaBlob,window._sfMetaName)" style="background:#B8721D;color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;margin:4px">Download Metadata JSON</button><br><button onclick="this.closest(\\u0027#sf-ov\\u0027).remove()" style="background:rgba(255,255,255,.15);color:#8BA3C7;border:none;border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;margin-top:6px">Close</button></div>';
+    return;
+  }
+
+  /* Show progress UI */
+  ov.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:8px">📚 SyllabusForge Scraper</div><div id="sf-st" style="font-size:12px;color:#8BA3C7">Loading JSZip...</div><div style="background:rgba(255,255,255,.15);border-radius:6px;height:8px;margin:8px 0;overflow:hidden"><div id="sf-pb" style="height:100%;background:#B8721D;border-radius:6px;width:0%;transition:width .3s"></div></div><div id="sf-lg" style="font-size:11px;color:#8BA3C7;max-height:100px;overflow-y:auto"></div>';
+  var stEl=document.getElementById('sf-st'),pbEl=document.getElementById('sf-pb'),lgEl=document.getElementById('sf-lg');
+  function log(m){var d=document.createElement('div');d.textContent=m;lgEl.appendChild(d);lgEl.scrollTop=lgEl.scrollHeight;}
+
+  /* Load JSZip */
   var s=document.createElement('script');
   s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-  s.onload=function(){downloadFiles(result,courseCode,metaName);};
-  s.onerror=function(){alert('Scrape complete! Metadata saved.\\nCould not load JSZip for file download — files not bundled.');};
-  document.head.appendChild(s);
-
-  function downloadFiles(result,courseCode,metaName){
+  s.onerror=function(){stEl.textContent='Could not load JSZip.';};
+  s.onload=function(){
     var zip=new JSZip();
     var folder=zip.folder(courseCode+'-materials');
     folder.file('_metadata.json',JSON.stringify(result,null,2));
     var files=result.files;
     var done=0,failed=0,total=files.length;
-
-    /* Create progress overlay */
-    var ov=document.createElement('div');
-    ov.id='sf-ov';
-    ov.style.cssText='position:fixed;bottom:20px;right:20px;width:360px;background:#1E2D4A;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:999999;font-family:system-ui,sans-serif;color:#fff;padding:16px;';
-    ov.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:8px">📚 SyllabusForge Scraper</div><div id="sf-st" style="font-size:12px;color:#8BA3C7">Downloading files...</div><div style="background:rgba(255,255,255,.15);border-radius:6px;height:8px;margin:8px 0;overflow:hidden"><div id="sf-pb" style="height:100%;background:#B8721D;border-radius:6px;width:0%;transition:width .3s"></div></div><div id="sf-lg" style="font-size:11px;color:#8BA3C7;max-height:100px;overflow-y:auto"></div>';
-    document.body.appendChild(ov);
-    var stEl=document.getElementById('sf-st'),pbEl=document.getElementById('sf-pb'),lgEl=document.getElementById('sf-lg');
-    function log(m){var d=document.createElement('div');d.textContent=m;lgEl.appendChild(d);lgEl.scrollTop=lgEl.scrollHeight;}
+    stEl.textContent='Downloading files...';
 
     function next(i){
       if(i>=total){
-        stEl.textContent='Building ZIP...';
+        stEl.textContent='Building ZIP ('+done+' files)...';
         zip.generateAsync({type:'blob',compression:'DEFLATE'}).then(function(blob){
           var zn=courseCode+'-materials.zip';
-          var a2=document.createElement('a');a2.href=URL.createObjectURL(blob);a2.download=zn;document.body.appendChild(a2);a2.click();document.body.removeChild(a2);URL.revokeObjectURL(a2.href);
-          ov.innerHTML='<div style="text-align:center;padding:12px"><div style="font-size:32px;margin-bottom:6px">✅</div><div style="font-weight:700;font-size:14px">Scrape Complete!</div><div style="font-size:12px;color:#8BA3C7;margin:8px 0"><div>📦 '+zn+' — '+done+' files</div><div>📋 '+metaName+'</div>'+(failed?'<div style=color:#E54>⚠ '+failed+' failed</div>':'')+'</div><button onclick="this.closest(\\'#sf-ov\\').remove()" style="background:#B8721D;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer">Close</button></div>';
+          window._sfZipBlob=blob;
+          window._sfZipName=zn;
+          ov.innerHTML='<div style="text-align:center;padding:12px">'
+            +'<div style="font-size:32px;margin-bottom:6px">✅</div>'
+            +'<div style="font-weight:700;font-size:15px;margin-bottom:10px">Scrape Complete!</div>'
+            +'<div style="font-size:12px;color:#8BA3C7;margin-bottom:12px">'+done+' files collected'+(failed?' ('+failed+' failed)':'')+'</div>'
+            +'<button onclick="window._sfDownload(window._sfZipBlob,window._sfZipName)" style="display:block;width:100%;background:#B8721D;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px">📦 Download '+zn+'</button>'
+            +'<button onclick="window._sfDownload(window._sfMetaBlob,window._sfMetaName)" style="display:block;width:100%;background:rgba(255,255,255,.12);color:#8BA3C7;border:none;border-radius:8px;padding:10px;font-size:13px;cursor:pointer;margin-bottom:8px">📋 Download Metadata JSON</button>'
+            +'<button onclick="this.closest(\\u0027#sf-ov\\u0027).remove()" style="background:none;color:#666;border:none;font-size:12px;cursor:pointer;margin-top:4px">Close</button>'
+            +'</div>';
         });
         return;
       }
@@ -254,17 +267,16 @@ const bookmarkletCode = `(function(){
       stEl.textContent='Downloading '+(i+1)+'/'+total+': '+f.name.slice(0,35);
       fetch(f.url,{credentials:'same-origin',redirect:'follow'}).then(function(r){
         if(!r.ok)throw new Error('HTTP '+r.status);
-        var ct=r.headers.get('content-type')||'';
-        if(ct.indexOf('text/html')>-1&&!/\\.html?$/i.test(f.name))throw new Error('Got HTML (login redirect?)');
         return r.blob();
       }).then(function(blob){
         var fn=f.name.replace(/[^a-zA-Z0-9._\\- ]/g,'').replace(/\\s+/g,'_').slice(0,100)||'file_'+i;
-        folder.file(fn,blob);done++;log('✓ '+fn);
+        folder.file(fn,blob);done++;log('OK '+fn+' ('+Math.round(blob.size/1024)+'KB)');
         next(i+1);
-      }).catch(function(e){failed++;log('✗ '+f.name+' — '+e.message);next(i+1);});
+      }).catch(function(e){failed++;log('FAIL '+f.name+' — '+e.message);next(i+1);});
     }
     next(0);
-  }
+  };
+  document.head.appendChild(s);
 })();`;
 
 document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(bookmarkletCode);
