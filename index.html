@@ -1229,6 +1229,9 @@ function saveToLibrary() {
     result: S.result,
     fileNames: S.files.map(f => f.name),
     scrapedBooks: S.scraped?.books || [],
+    scrapedFileNames: S.scraped?.fileNames || [],
+    scrapedLessons: S.scraped?.lessons || [],
+    materialsZipFiles: S.materialsZip?.fileList?.map(f => f.name) || [],
   };
   const idx = lib.findIndex(x => x.id === id);
   if (idx >= 0) lib[idx] = entry; else lib.unshift(entry);
@@ -1243,6 +1246,15 @@ function openSavedCourse(id) {
   S.slos = entry.slos;
   S.materialsList = entry.materialsList || '';
   S.result = entry.result;
+  // Restore scraped data from saved course
+  const allFiles = [...(entry.fileNames || []), ...(entry.scrapedFileNames || []), ...(entry.materialsZipFiles || [])];
+  if (allFiles.length || entry.scrapedBooks?.length) {
+    S.scraped = {
+      fileNames: [...new Set(allFiles)],
+      books: entry.scrapedBooks || [],
+      lessons: entry.scrapedLessons || [],
+    };
+  }
   S.step = 5; S.tab = 'schedule'; S.expandedWeek = 1;
   R();
 }
@@ -1401,7 +1413,13 @@ async function generateTeachPlan() {
 
   const c = S.course;
   const r = S.result;
-  const base = { course: c, slos: S.slos };
+  // Collect all known file names from scraped data, materials ZIP, and uploaded files
+  const courseFiles = [...new Set([
+    ...(S.scraped?.fileNames || []),
+    ...(S.materialsZip?.fileList?.map(f => f.name) || []),
+    ...(S.files?.map(f => f.name) || []),
+  ])].filter(Boolean);
+  const base = { course: c, slos: S.slos, courseFiles };
 
   try {
     const totalWeeks = parseInt(c.weeks) || 15;
@@ -1581,16 +1599,16 @@ async function tpCall(body) {
 
 // Build prompt based on phase
 function buildTPPrompt(body) {
-  const { phase, course, slos, schedule, assessments, materialsList, scraped, weeks, masterPlan } = body;
+  const { phase, course, slos, schedule, assessments, materialsList, scraped, weeks, masterPlan, courseFiles } = body;
+  const filesContext = (courseFiles || []).length > 0 ? '\nCOURSE FILES available: ' + (courseFiles || []).join(', ') + '\nReference specific files in your content where relevant.' : '';
 
   if (phase === 'master-plan') {
-    // weeks contains which week numbers to generate (usually just 1)
     const weekNum = (weeks || [1])[0];
     const sched = (schedule || []).find(w => w.week === weekNum) || {};
     return `Christ-centered Bible course, Williamson College.
 COURSE: ${course.title}|${course.code}
 Week ${weekNum} topic: "${sched.title||''}" — ${sched.topic||''} | Reading: ${sched.reading||''}
-SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}${filesContext}
 
 For week ${weekNum}, output ONE JSON object:
 {"week":${weekNum},"bp":["Genesis 1:1-10"],"kc":["concept1","concept2","concept3"],"obj":"Students will...","act":"Activity description"}
@@ -1604,10 +1622,10 @@ bp=1-2 Bible passage references relevant to this week's topic. kc=3 key concepts
     const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
     return `${course.title}|${course.code} — Week ${weekNum} content.
 SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
-Bible: ${bpRefs} | Concepts: ${concepts}
+Bible: ${bpRefs} | Concepts: ${concepts}${filesContext}
 
-For week ${weekNum}, output ONE JSON object:
-{"week":${weekNum},"lc":"200-300 word Christ-centered lecture referencing the Bible passages","kt":[{"t":"term","d":"definition"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"}],"dp":["Discussion question 1?","Discussion question 2?"],"an":"One sentence application activity."}
+For week ${weekNum}, output ONE JSON object. In the lecture, reference specific course files where relevant (maps, charts, documents). In the application note, tell students which files to review.
+{"week":${weekNum},"lc":"200-300 word Christ-centered lecture referencing Bible passages and course files","kt":[{"t":"term","d":"definition"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"}],"dp":["Discussion question 1?","Discussion question 2?"],"an":"Application activity referencing specific course files."}
 lc=lecture content, kt=key terms, dp=discussion prompts, an=application note.`;
   }
 
