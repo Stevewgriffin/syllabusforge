@@ -1457,19 +1457,15 @@ async function generateTeachPlan() {
     R();
     const exams = await tpCall({ ...base, phase: 'exams', masterPlan });
 
-    // Phase: Quizzes (batches of 5 weeks)
-    const quizBatches = [];
-    const weekNums = Array.from({length: totalWeeks}, (_, i) => i + 1);
-    for (let i = 0; i < weekNums.length; i += 3) {
-      quizBatches.push(weekNums.slice(i, i + 3));
-    }
+    // Phase: Quizzes + Writing Assignments — one week at a time
     const allQuizzes = [];
-    for (let q = 0; q < quizBatches.length; q++) {
-      S.teachPlanPhase = `Generating quizzes: batch ${q + 1}/${quizBatches.length} (weeks ${quizBatches[q][0]}–${quizBatches[q][quizBatches[q].length-1]})…`;
-      S._tpProgress = 70 + Math.round((q + 1) / quizBatches.length * 15);
+    for (let w = 1; w <= totalWeeks; w++) {
+      S.teachPlanPhase = `Generating quiz & writing assignment: week ${w}/${totalWeeks}…`;
+      S._tpProgress = 70 + Math.round((w / totalWeeks) * 15);
       R();
-      const qz = await tpCall({ ...base, phase: 'quizzes', weeks: quizBatches[q], masterPlan });
-      allQuizzes.push(...(Array.isArray(qz) ? qz : []));
+      const qz = await tpCall({ ...base, phase: 'quizzes', weeks: [w], masterPlan, schedule: r.schedule });
+      const qzObj = Array.isArray(qz) ? qz[0] : qz;
+      if (qzObj) allQuizzes.push(qzObj);
     }
 
     // Phase: Bible Passages
@@ -1564,7 +1560,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 3000 : 2000,
+      max_tokens: body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1659,13 +1655,22 @@ Compact. 10 MC each exam.`;
   }
 
   if (phase === 'quizzes') {
-    const weekPlans = (masterPlan || []).filter(w => (weeks || []).includes(w.week));
-    const wd = weekPlans.map(w => 'W' + w.week + ':' + (w.keyConcepts || w.kc || []).join(',') + '|' + (w.biblePassages || w.bp || []).join(',')).join('; ');
-    return `${course.title} weekly quizzes.
-Weeks: ${wd}
+    const weekNum = (weeks || [1])[0];
+    const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
+    const bpRefs = (wp.biblePassages || wp.bp || []).join(', ');
+    const reading = sched.reading || '';
+    return `${course.title} — Week ${weekNum} quiz and writing assignment.
+Topic: ${sched.title || ''} | Reading: ${reading} | Bible: ${bpRefs} | Concepts: ${concepts}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
 
-For each week, 5 MC questions. 4 options, correct answer, brief explanation.
-[{"week":1,"questions":[{"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"why"}]}]`;
+Create for week ${weekNum}:
+1. 15 multiple choice questions covering: lecture content (5), textbook reading (5), Bible passages (5). Mix: 5 recall, 5 application, 5 analysis. 4 options each, correct answer, explanation.
+2. One written assignment prompt (250-500 word response) tied to this week's SLO. Include a grading rubric.
+
+Output ONE JSON object:
+{"week":${weekNum},"questions":[15 items: {"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"why"}],"writing":{"prompt":"Assignment prompt requiring 250-500 word response...","slo":"SLO X","rubric":[{"l":"Excellent (90-100%)","d":"criteria"},{"l":"Proficient (80-89%)","d":"criteria"},{"l":"Developing (70-79%)","d":"criteria"},{"l":"Beginning (below 70%)","d":"criteria"}]}}`;
   }
 
   throw new Error('Unknown phase: ' + phase);
@@ -1826,6 +1831,7 @@ function buildTPWeekPage(weekNum, c, r, tp, css, totalWeeks) {
   ).join('');
 
   const quizHtml = quiz?.questions?.length ? buildQuizHTML(quiz.questions, weekNum) : '';
+  const writingAssignment = quiz?.writing;
 
   const prev = weekNum > 1 ? `<a href="week-${String(weekNum-1).padStart(2,'0')}.html" class="btn btn-primary">← Week ${weekNum-1}</a>` : '<span></span>';
   const next = weekNum < totalWeeks ? `<a href="week-${String(weekNum+1).padStart(2,'0')}.html" class="btn btn-primary">Week ${weekNum+1} →</a>` : '<a href="index.html" class="btn btn-primary">Back to Index</a>';
@@ -1851,7 +1857,18 @@ ${discussionHtml ? `<div class="card"><h3>Discussion Questions</h3>${discussionH
 ${wc.applicationNote ? `<div style="margin-top:12px;padding:12px;background:#EBF5F0;border-radius:8px;font-size:13px"><strong>Application Activity:</strong> ${esc(wc.applicationNote)}</div>` : ''}
 </div>` : ''}
 
-${quizHtml ? `<div class="card"><h3>Weekly Quiz</h3><p style="font-size:13px;color:#7A7A8A;margin-bottom:16px">10 questions · Select your answer, then click "Check Answers" to see your score.</p>${quizHtml}</div>` : ''}
+${quizHtml ? `<div class="card"><h3>Weekly Quiz</h3><p style="font-size:13px;color:#7A7A8A;margin-bottom:16px">15 questions · Select your answer, then click "Check Answers" to see your score.</p>${quizHtml}</div>` : ''}
+
+${writingAssignment ? `<div class="card">
+<h3>Written Assignment</h3>
+<span class="badge badge-slo">${esc(writingAssignment.slo || '')}</span>
+<div style="font-size:14px;line-height:1.8;margin:12px 0;padding:16px;background:#FAFAF5;border:1px solid #E4DDD0;border-radius:8px">${esc(writingAssignment.prompt || '')}</div>
+${writingAssignment.rubric?.length ? `<h4 style="font-size:14px;margin:12px 0 8px">Grading Rubric</h4>
+<table class="rubric"><tr><th>Level</th><th>Criteria</th></tr>
+${writingAssignment.rubric.map(r => '<tr><td style="font-weight:600;white-space:nowrap">' + esc(r.l || r.level || '') + '</td><td>' + esc(r.d || r.description || '') + '</td></tr>').join('')}
+</table>` : ''}
+<div style="margin-top:16px"><textarea placeholder="Write your response here (250-500 words)..." style="min-height:200px"></textarea></div>
+</div>` : ''}
 
 <div class="week-nav">${prev}${next}</div>
 </div>
