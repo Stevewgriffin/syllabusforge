@@ -1661,7 +1661,7 @@ ${q.options.map((opt, oi) => `<label class="quiz-opt" data-q="${i}" data-opt="${
 var quizData_${weekNum}=${qData};
 function selectOpt(el){el.parentElement.querySelectorAll('.quiz-opt').forEach(function(o){o.classList.remove('selected')});el.classList.add('selected')}
 function checkQuiz(w){var qs=quizData_${weekNum};var score=0;qs.forEach(function(q,i){var sel=document.querySelector('.quiz-q[data-idx="'+i+'"] .quiz-opt.selected');var ans=sel?sel.dataset.opt:'';var correct=q.answer;document.querySelectorAll('.quiz-q[data-idx="'+i+'"] .quiz-opt').forEach(function(o){o.classList.remove('correct','wrong');if(o.dataset.opt===correct)o.classList.add('correct');else if(o.classList.contains('selected')&&o.dataset.opt!==correct)o.classList.add('wrong')});var exp=document.getElementById('explain-'+w+'-'+i);if(exp){exp.style.display='block';exp.textContent=(ans===correct?'✓ Correct':'✗ Incorrect — '+correct)+'. '+(q.explanation||'')}if(ans===correct)score++});var el=document.getElementById('quiz-score-'+w);if(el){el.style.display='block';el.textContent='Score: '+score+'/'+qs.length+' ('+Math.round(score/qs.length*100)+'%)'}}
-</script>`;
+<\/script>`;
 }
 
 function buildTPExamPage(type, c, tp, css, weekNum) {
@@ -1713,8 +1713,8 @@ ${extraHtml}
 var examData=${qData};
 function selectOpt(el){el.parentElement.querySelectorAll('.quiz-opt').forEach(function(o){o.classList.remove('selected')});el.classList.add('selected')}
 function checkExam(){var score=0;examData.forEach(function(q,i){var sel=document.querySelector('.quiz-q[data-idx="'+i+'"] .quiz-opt.selected');var ans=sel?sel.dataset.opt:'';var correct=q.answer;document.querySelectorAll('.quiz-q[data-idx="'+i+'"] .quiz-opt').forEach(function(o){o.classList.remove('correct','wrong');if(o.dataset.opt===correct)o.classList.add('correct');else if(o.classList.contains('selected')&&o.dataset.opt!==correct)o.classList.add('wrong')});var exp=document.getElementById('explain-${type}-'+i);if(exp){exp.style.display='block';exp.textContent=(ans===correct?'Correct':'Incorrect — '+correct)+'. '+(q.explanation||'')}if(ans===correct)score++});var el=document.getElementById('exam-score');if(el){el.style.display='block';el.textContent='Score: '+score+'/'+examData.length+' ('+Math.round(score/examData.length*100)+'%)'}}
-</script>
-</body></html>`;
+<\/script>
+<\/body><\/html>`;
 }
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
