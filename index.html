@@ -1446,7 +1446,7 @@ async function generateTeachPlan() {
       S.teachPlanPhase = `Writing content: week ${w}/${totalWeeks}…`;
       S._tpProgress = 15 + Math.round((w / totalWeeks) * 40);
       R();
-      const wc = await tpCall({ ...base, phase: 'week-content', weeks: [w], masterPlan });
+      const wc = await tpCall({ ...base, phase: 'week-content', weeks: [w], masterPlan, schedule: r.schedule });
       const wcObj = Array.isArray(wc) ? wc[0] : wc;
       if (wcObj) allWeekContent.push(wcObj);
     }
@@ -1564,7 +1564,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 3000 : 2000,
+      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'week-content' ? 4000 : body.phase === 'quizzes' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1623,13 +1623,21 @@ bp=1-2 Bible passage references relevant to this week's topic. kc=3 key concepts
     const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
     const bpRefs = (wp.biblePassages || wp.bp || []).join(', ');
     const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
-    return `${course.title}|${course.code} — Week ${weekNum} content.
+    // Get reading assignment from schedule
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    const reading = sched.reading || '';
+    return `${course.title}|${course.code} — Week ${weekNum} detailed content.
 SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
-Bible: ${bpRefs} | Concepts: ${concepts}${filesContext}
+Bible passages: ${bpRefs} | Key concepts: ${concepts}
+ASSIGNED READING: ${reading}${filesContext}
 
-For week ${weekNum}, output ONE JSON object. In the lecture, reference specific course files where relevant (maps, charts, documents). In the application note, tell students which files to review.
-{"week":${weekNum},"lc":"200-300 word Christ-centered lecture referencing Bible passages and course files","kt":[{"t":"term","d":"definition"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"}],"dp":["Discussion question 1?","Discussion question 2?"],"an":"Application activity referencing specific course files."}
-lc=lecture content, kt=key terms, dp=discussion prompts, an=application note.`;
+CRITICAL INSTRUCTION: The lecture MUST integrate substantive content from the assigned reading. Do NOT just say "read chapters X-Y." Instead, summarize key arguments, frameworks, evidence, and insights from those chapters as if you are teaching from the textbook. Students should learn the core material from the lecture itself. Include specific concepts, terminology, and arguments the author makes. If the reading is from "Four Portraits, One Jesus" by Strauss, cover his analysis of Gospel portraits, synoptic relationships, and historical reliability arguments from those chapters. If from "Introduction to the Intertestamental Period" by Surburg, cover the historical events, political changes, and religious developments from those chapters.
+
+Also reference Bible passages and course files (maps, charts, documents) where relevant.
+
+Output ONE JSON object for week ${weekNum}:
+{"week":${weekNum},"lc":"500-700 word lecture that teaches the textbook content, references Bible passages, and points to course files","kt":[{"t":"term from reading","d":"definition as textbook explains it"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"},{"t":"term4","d":"def4"},{"t":"term5","d":"def5"}],"dp":["Discussion question connecting reading to Bible passage?","Question applying textbook concepts to faith?"],"an":"Application activity using course files and textbook concepts."}
+lc=lecture (500-700 words, substantive textbook content), kt=5 key terms FROM the reading, dp=discussion prompts, an=application note.`;
   }
 
   if (phase === 'exams') {
