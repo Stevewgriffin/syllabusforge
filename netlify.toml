@@ -12,3 +12,13 @@
   from = "/api/generate"
   to = "/.netlify/functions/generate"
   status = 200
+
+[[redirects]]
+  from = "/api/teach-plan"
+  to = "/.netlify/functions/teach-plan"
+  status = 200
+
+[[redirects]]
+  from = "/api/esv-passages"
+  to = "/.netlify/functions/esv-passages"
+  status = 200

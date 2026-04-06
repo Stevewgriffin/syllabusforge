@@ -205,7 +205,10 @@ let S = {
   materialsList: '',
   // Generation
   generating: false, genMsg: '', genInterval: null,
-  result: null, error: '', tab: 'schedule', expandedWeek: null, editWeek: null
+  result: null, error: '', tab: 'schedule', expandedWeek: null, editWeek: null,
+  // Teaching Plan
+  teachPlan: null, // { masterPlan, weekContent, exams, quizzes, biblePassages }
+  teachPlanGenerating: false, teachPlanPhase: '', teachPlanError: ''
 };
 
 function R() { renderHeader(); renderProgress(); renderApp(); }
@@ -548,6 +551,7 @@ function step5() {
         <button class="btn-export" style="background:#1E2D4A" onclick="saveToLibrary();alert('✅ Saved to your course library!')">💾 Save</button>
         <button class="btn-export" style="background:#B8721D" onclick="dlSyllabus()">⬇ TXT</button>
         <button class="btn-export" style="background:#555" onclick="dlCSV()">⬇ CSV</button>
+        ${!S.teachPlan && !S.teachPlanGenerating ? `<button class="btn-export" style="background:#6B21A8;padding:10px 18px" onclick="generateTeachPlan()">🎓 Generate Teaching Plan</button>` : ''}
       </div>
     </div>
     <div class="tabs">
@@ -555,11 +559,14 @@ function step5() {
       <button class="tab-btn ${S.tab==='assessments'?'active':''}" onclick="setTab('assessments')">📝 Assessments</button>
       <button class="tab-btn ${S.tab==='grading'?'active':''}" onclick="setTab('grading')">📊 Grading</button>
       <button class="tab-btn ${S.tab==='syllabus'?'active':''}" onclick="setTab('syllabus')">📄 Full Syllabus</button>
+      ${S.teachPlan||S.teachPlanGenerating?`<button class="tab-btn ${S.tab==='teachplan'?'active':''}" onclick="setTab('teachplan')">🎓 Teaching Plan</button>`:''}
     </div>
     ${S.tab==='schedule'?renderSched(r):''}
     ${S.tab==='assessments'?renderAssess(r):''}
     ${S.tab==='grading'?renderGrading(r):''}
     ${S.tab==='syllabus'?renderSyllabusTab(r):''}
+    ${S.tab==='teachplan'?renderTeachPlanTab():''}
+    ${S.teachPlanError?`<div class="notice notice-error" style="margin-top:12px">⚠ Teaching Plan: ${e(S.teachPlanError)}</div>`:''}
     <div style="text-align:center;margin-top:20px"><button class="btn-ghost" onclick="resetAll()">← Build Another Course</button></div>`;
 }
 
@@ -1334,6 +1341,383 @@ async function dlPackage() {
   const blob = await zip.generateAsync({ type: 'blob' });
   dl(blob, `${c.code}-syllabus-package.zip`);
 }
+
+// ── TEACHING PLAN ───────────────────────────────────────────────────────────
+
+function renderTeachPlanTab() {
+  if (S.teachPlanGenerating) {
+    return `<div class="card" style="text-align:center;padding:40px">
+      <div class="spinner-icon" style="font-size:36px;margin-bottom:12px">🎓</div>
+      <div style="font-weight:700;font-size:16px;color:var(--navy);margin-bottom:8px">Generating Teaching Plan</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">${e(S.teachPlanPhase)}</div>
+      <div style="background:var(--border);border-radius:6px;height:8px;max-width:300px;margin:0 auto;overflow:hidden">
+        <div style="height:100%;background:#6B21A8;border-radius:6px;width:${S._tpProgress||0}%;transition:width .4s"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:12px">This takes 2–4 minutes (8 AI calls + Bible passages)…</div>
+    </div>`;
+  }
+
+  if (!S.teachPlan) {
+    return `<div class="card" style="text-align:center;padding:40px">
+      <div style="font-size:36px;margin-bottom:12px">🎓</div>
+      <div style="font-weight:700;font-size:16px;color:var(--navy);margin-bottom:8px">Full Asynchronous Course</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:20px;max-width:500px;margin-left:auto;margin-right:auto;line-height:1.7">
+        Generate a complete async course with weekly content pages, embedded ESV Bible passages, MC quizzes (10/week), midterm & final exams, and essay assignments — all as downloadable HTML.
+      </div>
+      <button class="btn-amber" style="padding:12px 28px;font-size:14px;background:#6B21A8" onclick="generateTeachPlan()">🎓 Generate Teaching Plan</button>
+    </div>`;
+  }
+
+  const tp = S.teachPlan;
+  const weekCount = tp.masterPlan?.length || 0;
+  const quizCount = tp.quizzes?.reduce((s,w) => s + (w.questions?.length||0), 0) || 0;
+  const midMC = tp.exams?.midterm?.mc?.length || 0;
+  const finMC = tp.exams?.final?.mc?.length || 0;
+
+  return `<div class="card">
+    <div class="card-title">Teaching Plan Ready</div>
+    <div class="card-hint">Complete asynchronous course generated. Download as a set of HTML pages.</div>
+    <div class="summary-grid">
+      <div><div class="slabel">Weekly Content</div><div class="sval">${weekCount} weeks with lectures</div></div>
+      <div><div class="slabel">Weekly Quizzes</div><div class="sval">${quizCount} MC questions total</div></div>
+      <div><div class="slabel">Midterm Exam</div><div class="sval">${midMC} MC + short answer</div></div>
+      <div><div class="slabel">Final Exam</div><div class="sval">${finMC} MC + essays</div></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <button class="btn-amber" style="padding:12px 24px;font-size:14px;background:#6B21A8" onclick="downloadTeachPlanZip()">🎓 Download Teaching Plan (.zip)</button>
+      <button class="btn-ghost" onclick="S.teachPlan=null;S.tab='schedule';R()">Discard</button>
+    </div>
+  </div>`;
+}
+
+// ── Teaching Plan Orchestration ─────────────────────────────────────────────
+async function generateTeachPlan() {
+  S.teachPlanGenerating = true;
+  S.teachPlanError = '';
+  S.teachPlan = null;
+  S._tpProgress = 0;
+  S.tab = 'teachplan';
+  R();
+
+  const c = S.course;
+  const r = S.result;
+  const base = { course: c, slos: S.slos };
+
+  try {
+    // Phase 1: Master Plan
+    S.teachPlanPhase = 'Phase 1/6 — Creating master content plan…';
+    S._tpProgress = 5;
+    R();
+    const masterPlan = await tpCall({ ...base, phase: 'master-plan', schedule: r.schedule, assessments: r.assessments, materialsList: S.materialsList, scraped: S.scraped });
+    S._tpProgress = 15;
+
+    // Phase 2-5: Week Content (batches of ~4 weeks)
+    const totalWeeks = parseInt(c.weeks) || 15;
+    const weekNums = Array.from({length: totalWeeks}, (_, i) => i + 1);
+    const batches = [];
+    for (let i = 0; i < weekNums.length; i += 4) {
+      batches.push(weekNums.slice(i, i + 4));
+    }
+
+    const allWeekContent = [];
+    for (let b = 0; b < batches.length; b++) {
+      S.teachPlanPhase = `Phase ${2 + b}/${4 + batches.length} — Writing content for weeks ${batches[b][0]}–${batches[b][batches[b].length-1]}…`;
+      S._tpProgress = 15 + Math.round((b + 1) / batches.length * 40);
+      R();
+      const wc = await tpCall({ ...base, phase: 'week-content', weeks: batches[b], masterPlan });
+      allWeekContent.push(...(Array.isArray(wc) ? wc : []));
+    }
+
+    // Phase: Exams
+    S.teachPlanPhase = `Phase ${3 + batches.length}/${4 + batches.length} — Creating midterm & final exams…`;
+    S._tpProgress = 65;
+    R();
+    const exams = await tpCall({ ...base, phase: 'exams', masterPlan });
+
+    // Phase: Quizzes (batches of 5 weeks)
+    const quizBatches = [];
+    for (let i = 0; i < weekNums.length; i += 5) {
+      quizBatches.push(weekNums.slice(i, i + 5));
+    }
+    const allQuizzes = [];
+    for (let q = 0; q < quizBatches.length; q++) {
+      S.teachPlanPhase = `Phase ${4 + batches.length + q}/${4 + batches.length + quizBatches.length} — Generating quizzes for weeks ${quizBatches[q][0]}–${quizBatches[q][quizBatches[q].length-1]}…`;
+      S._tpProgress = 70 + Math.round((q + 1) / quizBatches.length * 15);
+      R();
+      const qz = await tpCall({ ...base, phase: 'quizzes', weeks: quizBatches[q], masterPlan });
+      allQuizzes.push(...(Array.isArray(qz) ? qz : []));
+    }
+
+    // Phase: Bible Passages
+    S.teachPlanPhase = 'Fetching ESV Bible passages…';
+    S._tpProgress = 90;
+    R();
+    const allPassageRefs = masterPlan.flatMap(w => w.biblePassages || []).filter(Boolean);
+    let biblePassages = {};
+    if (allPassageRefs.length > 0) {
+      try {
+        const resp = await fetch('/api/esv-passages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passages: [...new Set(allPassageRefs)] }),
+        });
+        const data = await resp.json();
+        for (const p of (data.passages || [])) {
+          biblePassages[p.ref] = p.html || p.canonical || '';
+        }
+      } catch (e) { /* Bible passages optional */ }
+    }
+
+    S._tpProgress = 100;
+    S.teachPlan = { masterPlan, weekContent: allWeekContent, exams, quizzes: allQuizzes, biblePassages };
+    S.teachPlanGenerating = false;
+    S.teachPlanPhase = '';
+    R();
+  } catch (err) {
+    S.teachPlanGenerating = false;
+    S.teachPlanError = err.message;
+    S.tab = 'schedule';
+    R();
+  }
+}
+
+async function tpCall(body) {
+  const resp = await fetch('/api/teach-plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+// ── Teaching Plan HTML Template & ZIP Download ──────────────────────────────
+async function downloadTeachPlanZip() {
+  const tp = S.teachPlan;
+  const c = S.course;
+  const r = S.result;
+  if (!tp) return;
+
+  const zip = new JSZip();
+  const folder = zip.folder(c.code + '-teaching-plan');
+
+  const css = buildTPStyles();
+
+  // Index page
+  folder.file('index.html', buildTPIndex(c, r, tp, css));
+
+  // Week pages
+  const totalWeeks = parseInt(c.weeks) || 15;
+  for (let w = 1; w <= totalWeeks; w++) {
+    folder.file(`week-${String(w).padStart(2,'0')}.html`, buildTPWeekPage(w, c, r, tp, css, totalWeeks));
+  }
+
+  // Exam pages
+  const midWeek = Math.ceil(totalWeeks / 2);
+  folder.file('midterm.html', buildTPExamPage('midterm', c, tp, css, midWeek));
+  folder.file('final.html', buildTPExamPage('final', c, tp, css, totalWeeks));
+
+  // Data export
+  folder.file('course-data.json', JSON.stringify({ course: c, slos: S.slos, result: r, teachPlan: tp }, null, 2));
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  dl(blob, `${c.code}-teaching-plan.zip`);
+}
+
+function buildTPStyles() {
+  return `*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#F8F5EF;color:#1A1A2E;line-height:1.7}
+.header{background:#1E2D4A;color:#fff;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
+.header h1{font-size:18px;font-weight:700}.header .meta{font-size:12px;opacity:.7}
+.nav-bar{background:#fff;border-bottom:1px solid #E4DDD0;padding:10px 24px;display:flex;gap:8px;flex-wrap:wrap;overflow-x:auto}
+.nav-bar a{text-decoration:none;color:#1E2D4A;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;white-space:nowrap}
+.nav-bar a:hover,.nav-bar a.active{background:#1E2D4A;color:#fff}
+.main{max-width:840px;margin:24px auto;padding:0 20px}
+.card{background:#fff;border:1px solid #E4DDD0;border-radius:12px;padding:24px;margin-bottom:20px}
+.card h2{font-size:20px;color:#1E2D4A;margin-bottom:8px}
+.card h3{font-size:16px;color:#1E2D4A;margin:16px 0 8px}
+.badge{display:inline-block;background:#EEF2F8;color:#1E2D4A;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;margin-right:6px}
+.badge-slo{background:#EBF5F0;color:#2A6049}
+.bible{background:#FDF3E3;border-left:4px solid #B8721D;border-radius:0 8px 8px 0;padding:16px 20px;margin:16px 0;font-style:italic;line-height:1.8;font-size:14px}
+.bible .ref{font-style:normal;font-weight:700;color:#B8721D;display:block;margin-bottom:6px;font-size:13px}
+.key-term{background:#F5F2EC;border-radius:8px;padding:10px 14px;margin-bottom:8px}
+.key-term strong{color:#1E2D4A}
+.discussion{background:#EEF2F8;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:14px}
+.quiz-wrap{margin-top:24px}.quiz-q{background:#F5F2EC;border-radius:8px;padding:14px;margin-bottom:10px}
+.quiz-q p{font-weight:600;margin-bottom:8px;font-size:14px}
+.quiz-opt{display:block;padding:6px 12px;margin:3px 0;border-radius:6px;cursor:pointer;font-size:13px;border:1.5px solid #E4DDD0;background:#fff}
+.quiz-opt:hover{background:#EEF2F8;border-color:#1E2D4A}
+.quiz-opt.selected{border-color:#1E2D4A;background:#EEF2F8;font-weight:600}
+.quiz-opt.correct{border-color:#2A6049;background:#EBF5F0}
+.quiz-opt.wrong{border-color:#991B1B;background:#FEE2E2}
+.quiz-explain{font-size:12px;color:#4A4A6A;margin-top:6px;display:none}
+.btn{display:inline-block;padding:10px 20px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;color:#fff}
+.btn-primary{background:#1E2D4A}.btn-amber{background:#B8721D}.btn-purple{background:#6B21A8}
+.btn:hover{opacity:.85}
+.week-nav{display:flex;justify-content:space-between;margin-top:24px;padding-top:16px;border-top:1px solid #E4DDD0}
+.footer{text-align:center;padding:24px;font-size:12px;color:#7A7A8A;margin-top:20px}
+textarea{width:100%;border:1.5px solid #E4DDD0;border-radius:7px;padding:10px;font-family:inherit;font-size:14px;min-height:120px;resize:vertical}
+.rubric{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+.rubric th,.rubric td{border:1px solid #E4DDD0;padding:8px 10px;text-align:left}
+.rubric th{background:#F5F2EC;font-weight:600}`;
+}
+
+function buildTPIndex(c, r, tp, css) {
+  const totalWeeks = parseInt(c.weeks) || 15;
+  const weekCards = tp.masterPlan.map(w => {
+    const sched = r.schedule.find(s => s.week === w.week) || {};
+    return `<a href="week-${String(w.week).padStart(2,'0')}.html" style="text-decoration:none;color:inherit">
+      <div class="card" style="padding:14px;cursor:pointer;transition:transform .1s"><div style="display:flex;gap:10px;align-items:center">
+        <span class="badge">WK ${w.week}</span><div><div style="font-weight:600;font-size:14px">${esc(sched.title||'Week '+w.week)}</div>
+        <div style="font-size:12px;color:#7A7A8A">${esc(sched.topic||'')}</div></div></div></div></a>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${esc(c.title)} — ${esc(c.code)}</title><style>${css}</style></head><body>
+<div class="header"><div><h1>${esc(c.title)}</h1><div class="meta">${esc(c.code)} · ${c.creditHours} Credits · ${c.weeks} Weeks</div></div>
+<div class="meta">Williamson College</div></div>
+<div class="main">
+<div class="card"><h2>Course Overview</h2><p style="margin:8px 0;font-size:14px;color:#4A4A6A">${esc(c.description||'')}</p>
+<h3>Student Learning Outcomes</h3>
+${S.slos.map((s,i) => `<div style="padding:6px 0;font-size:13px"><span class="badge badge-slo">SLO ${i+1}</span> ${esc(s)}</div>`).join('')}
+</div>
+<h3 style="margin:20px 0 12px;color:#1E2D4A">Weekly Modules</h3>
+${weekCards}
+<div style="display:flex;gap:12px;margin:20px 0">
+<a href="midterm.html" class="btn btn-primary" style="flex:1;text-align:center">📝 Midterm Exam</a>
+<a href="final.html" class="btn btn-amber" style="flex:1;text-align:center">📝 Final Exam</a>
+</div></div>
+<div class="footer">Generated by SyllabusForge · Williamson College · ${new Date().getFullYear()}</div>
+</body></html>`;
+}
+
+function buildTPWeekPage(weekNum, c, r, tp, css, totalWeeks) {
+  const mp = tp.masterPlan.find(w => w.week === weekNum) || {};
+  const wc = tp.weekContent.find(w => w.week === weekNum) || {};
+  const sched = r.schedule.find(s => s.week === weekNum) || {};
+  const quiz = tp.quizzes.find(q => q.week === weekNum);
+  const bibleHtml = (mp.biblePassages || []).map(ref => {
+    const html = tp.biblePassages[ref];
+    return `<div class="bible"><span class="ref">${esc(ref)}</span>${html || '<em>Passage text not available — read in your Bible.</em>'}</div>`;
+  }).join('');
+
+  const keyTermsHtml = (wc.keyTerms || []).map(t =>
+    `<div class="key-term"><strong>${esc(t.term)}:</strong> ${esc(t.definition)}</div>`
+  ).join('');
+
+  const discussionHtml = (wc.discussionPrompts || []).map((d, i) =>
+    `<div class="discussion"><strong>${i+1}.</strong> ${esc(d)}</div>`
+  ).join('');
+
+  const quizHtml = quiz?.questions?.length ? buildQuizHTML(quiz.questions, weekNum) : '';
+
+  const prev = weekNum > 1 ? `<a href="week-${String(weekNum-1).padStart(2,'0')}.html" class="btn btn-primary">← Week ${weekNum-1}</a>` : '<span></span>';
+  const next = weekNum < totalWeeks ? `<a href="week-${String(weekNum+1).padStart(2,'0')}.html" class="btn btn-primary">Week ${weekNum+1} →</a>` : '<a href="index.html" class="btn btn-primary">Back to Index</a>';
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Week ${weekNum}: ${esc(sched.title||'')} — ${esc(c.code)}</title><style>${css}</style></head><body>
+<div class="header"><div><h1>${esc(c.code)}: ${esc(c.title)}</h1><div class="meta">Week ${weekNum} of ${totalWeeks}</div></div>
+<a href="index.html" style="color:#8BA3C7;text-decoration:none;font-size:13px">← Course Home</a></div>
+<div class="main">
+<div class="card">
+<span class="badge">WEEK ${weekNum}</span> <span class="badge badge-slo">${esc(sched.slo||'')}</span>
+<h2 style="margin-top:8px">${esc(sched.title||'Week '+weekNum)}</h2>
+<p style="color:#7A7A8A;font-size:14px;margin:4px 0 16px">${esc(sched.topic||'')}</p>
+${sched.reading ? `<div style="font-size:13px;margin-bottom:12px"><strong>Required Reading:</strong> ${esc(sched.reading)}</div>` : ''}
+${bibleHtml}
+</div>
+
+${wc.lectureContent ? `<div class="card"><h3>Lecture</h3><div style="font-size:14px;line-height:1.8;white-space:pre-wrap">${esc(wc.lectureContent)}</div></div>` : ''}
+
+${keyTermsHtml ? `<div class="card"><h3>Key Terms</h3>${keyTermsHtml}</div>` : ''}
+
+${discussionHtml ? `<div class="card"><h3>Discussion Questions</h3>${discussionHtml}
+${wc.applicationNote ? `<div style="margin-top:12px;padding:12px;background:#EBF5F0;border-radius:8px;font-size:13px"><strong>Application Activity:</strong> ${esc(wc.applicationNote)}</div>` : ''}
+</div>` : ''}
+
+${quizHtml ? `<div class="card"><h3>Weekly Quiz</h3><p style="font-size:13px;color:#7A7A8A;margin-bottom:16px">10 questions · Select your answer, then click "Check Answers" to see your score.</p>${quizHtml}</div>` : ''}
+
+<div class="week-nav">${prev}${next}</div>
+</div>
+<div class="footer">Generated by SyllabusForge · Williamson College</div>
+</body></html>`;
+}
+
+function buildQuizHTML(questions, weekNum) {
+  const qData = JSON.stringify(questions).replace(/</g,'\\u003c').replace(/'/g,'\\u0027');
+  return `<div class="quiz-wrap" id="quiz-${weekNum}">
+${questions.map((q, i) => `<div class="quiz-q" data-idx="${i}">
+<p>Q${i+1}. ${esc(q.q)}</p>
+${q.options.map((opt, oi) => `<label class="quiz-opt" data-q="${i}" data-opt="${String.fromCharCode(65+oi)}" onclick="selectOpt(this)">${String.fromCharCode(65+oi)}. ${esc(opt)}</label>`).join('')}
+<div class="quiz-explain" id="explain-${weekNum}-${i}"></div>
+</div>`).join('')}
+<button class="btn btn-purple" onclick="checkQuiz(${weekNum})" style="margin-top:12px">Check Answers</button>
+<div id="quiz-score-${weekNum}" style="margin-top:12px;font-weight:700;font-size:15px;display:none"></div>
+</div>
+<script>
+var quizData_${weekNum}=${qData};
+function selectOpt(el){el.parentElement.querySelectorAll('.quiz-opt').forEach(function(o){o.classList.remove('selected')});el.classList.add('selected')}
+function checkQuiz(w){var qs=quizData_${weekNum};var score=0;qs.forEach(function(q,i){var sel=document.querySelector('.quiz-q[data-idx="'+i+'"] .quiz-opt.selected');var ans=sel?sel.dataset.opt:'';var correct=q.answer;document.querySelectorAll('.quiz-q[data-idx="'+i+'"] .quiz-opt').forEach(function(o){o.classList.remove('correct','wrong');if(o.dataset.opt===correct)o.classList.add('correct');else if(o.classList.contains('selected')&&o.dataset.opt!==correct)o.classList.add('wrong')});var exp=document.getElementById('explain-'+w+'-'+i);if(exp){exp.style.display='block';exp.textContent=(ans===correct?'✓ Correct':'✗ Incorrect — '+correct)+'. '+(q.explanation||'')}if(ans===correct)score++});var el=document.getElementById('quiz-score-'+w);if(el){el.style.display='block';el.textContent='Score: '+score+'/'+qs.length+' ('+Math.round(score/qs.length*100)+'%)'}}
+</script>`;
+}
+
+function buildTPExamPage(type, c, tp, css, weekNum) {
+  const exam = type === 'midterm' ? tp.exams?.midterm : tp.exams?.final;
+  if (!exam) return `<!DOCTYPE html><html><body><p>Exam not generated.</p></body></html>`;
+  const title = type === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+  const mcQuestions = exam.mc || [];
+  const qData = JSON.stringify(mcQuestions).replace(/</g,'\\u003c').replace(/'/g,'\\u0027');
+
+  let extraHtml = '';
+  if (type === 'midterm' && exam.shortAnswer?.length) {
+    extraHtml = `<div class="card"><h3>Short Answer Questions</h3>
+    ${exam.shortAnswer.map((q,i) => `<div style="margin-bottom:20px">
+      <p style="font-weight:600;font-size:14px;margin-bottom:8px">${i+1}. ${esc(q.q)} <span class="badge badge-slo">${esc(q.slo||'')}</span> <span class="badge">${q.points} pts</span></p>
+      <textarea placeholder="Write your answer here..."></textarea>
+    </div>`).join('')}</div>`;
+  }
+  if (type === 'final' && exam.essays?.length) {
+    extraHtml = `<div class="card"><h3>Essay Questions</h3>
+    ${exam.essays.map((q,i) => `<div style="margin-bottom:24px">
+      <p style="font-weight:600;font-size:14px;margin-bottom:8px">${i+1}. ${esc(q.prompt)} <span class="badge badge-slo">${esc(q.slo||'')}</span> <span class="badge">${q.points} pts</span></p>
+      ${q.rubric?.length ? `<table class="rubric"><tr><th>Level</th><th>Points</th><th>Description</th></tr>
+      ${q.rubric.map(r => `<tr><td style="font-weight:600">${esc(r.level)}</td><td>${esc(r.points)}</td><td>${esc(r.description)}</td></tr>`).join('')}</table>` : ''}
+      <textarea placeholder="Write your essay here..." style="min-height:200px"></textarea>
+    </div>`).join('')}</div>`;
+  }
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>${title} — ${esc(c.code)}</title><style>${css}</style></head><body>
+<div class="header"><div><h1>${esc(c.code)}: ${title}</h1><div class="meta">${esc(c.title)} · Williamson College</div></div>
+<a href="index.html" style="color:#8BA3C7;text-decoration:none;font-size:13px">← Course Home</a></div>
+<div class="main">
+<div class="card"><h2>Multiple Choice (${mcQuestions.length} Questions)</h2>
+<p style="font-size:13px;color:#7A7A8A;margin-bottom:16px">Select your answer for each question. Click "Check Answers" when finished.</p>
+<div class="quiz-wrap" id="quiz-${type}">
+${mcQuestions.map((q,i) => `<div class="quiz-q" data-idx="${i}">
+<p>Q${i+1}. ${esc(q.q)} <span class="badge badge-slo" style="font-size:10px">${esc(q.slo||'')}</span></p>
+${q.options.map((opt,oi) => `<label class="quiz-opt" data-q="${i}" data-opt="${String.fromCharCode(65+oi)}" onclick="selectOpt(this)">${String.fromCharCode(65+oi)}. ${esc(opt)}</label>`).join('')}
+<div class="quiz-explain" id="explain-${type}-${i}"></div>
+</div>`).join('')}
+<button class="btn btn-purple" onclick="checkExam()" style="margin-top:12px">Check Answers</button>
+<div id="exam-score" style="margin-top:12px;font-weight:700;font-size:15px;display:none"></div>
+</div></div>
+${extraHtml}
+<div class="week-nav"><a href="index.html" class="btn btn-primary">← Back to Course Home</a></div>
+</div>
+<div class="footer">Generated by SyllabusForge · Williamson College</div>
+<script>
+var examData=${qData};
+function selectOpt(el){el.parentElement.querySelectorAll('.quiz-opt').forEach(function(o){o.classList.remove('selected')});el.classList.add('selected')}
+function checkExam(){var score=0;examData.forEach(function(q,i){var sel=document.querySelector('.quiz-q[data-idx="'+i+'"] .quiz-opt.selected');var ans=sel?sel.dataset.opt:'';var correct=q.answer;document.querySelectorAll('.quiz-q[data-idx="'+i+'"] .quiz-opt').forEach(function(o){o.classList.remove('correct','wrong');if(o.dataset.opt===correct)o.classList.add('correct');else if(o.classList.contains('selected')&&o.dataset.opt!==correct)o.classList.add('wrong')});var exp=document.getElementById('explain-${type}-'+i);if(exp){exp.style.display='block';exp.textContent=(ans===correct?'Correct':'Incorrect — '+correct)+'. '+(q.explanation||'')}if(ans===correct)score++});var el=document.getElementById('exam-score');if(el){el.style.display='block';el.textContent='Score: '+score+'/'+examData.length+' ('+Math.round(score/examData.length*100)+'%)'}}
+</script>
+</body></html>`;
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
 function e(s) {
