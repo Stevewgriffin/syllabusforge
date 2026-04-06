@@ -1440,31 +1440,30 @@ async function generateTeachPlan() {
       if (obj) masterPlan.push(obj);
     }
 
-    // Phase 2: Week Content — two calls per week (lecture + extras)
+    // Phase 2: Week Content — two calls per week (lecture + extras), error-tolerant
     const allWeekContent = [];
     for (let w = 1; w <= totalWeeks; w++) {
-      S.teachPlanPhase = `Writing lecture: week ${w}/${totalWeeks}…`;
-      S._tpProgress = 15 + Math.round((w / totalWeeks) * 30);
-      R();
-      // Call 1: Lecture only
-      const lc = await tpCall({ ...base, phase: 'week-lecture', weeks: [w], masterPlan, schedule: r.schedule });
-      const lcObj = Array.isArray(lc) ? lc[0] : lc;
+      let lectureContent = '', keyTerms = [], discussionPrompts = [], applicationNote = '';
+      try {
+        S.teachPlanPhase = `Writing lecture: week ${w}/${totalWeeks}…`;
+        S._tpProgress = 15 + Math.round((w / totalWeeks) * 30);
+        R();
+        const lc = await tpCall({ ...base, phase: 'week-lecture', weeks: [w], masterPlan, schedule: r.schedule });
+        const lcObj = Array.isArray(lc) ? lc[0] : lc;
+        lectureContent = lcObj?.lectureContent || lcObj?.lc || '';
+      } catch (e) { console.log('Lecture week ' + w + ' failed:', e.message); }
 
-      S.teachPlanPhase = `Writing terms & discussion: week ${w}/${totalWeeks}…`;
-      S._tpProgress = 15 + Math.round(((w - 0.5) / totalWeeks) * 30);
-      R();
-      // Call 2: Key terms, discussion, application
-      const ex = await tpCall({ ...base, phase: 'week-extras', weeks: [w], masterPlan, schedule: r.schedule });
-      const exObj = Array.isArray(ex) ? ex[0] : ex;
+      try {
+        S.teachPlanPhase = `Writing terms & discussion: week ${w}/${totalWeeks}…`;
+        R();
+        const ex = await tpCall({ ...base, phase: 'week-extras', weeks: [w], masterPlan, schedule: r.schedule });
+        const exObj = Array.isArray(ex) ? ex[0] : ex;
+        keyTerms = (exObj?.keyTerms || exObj?.kt || []).map(t => ({ term: t.term || t.t || '', definition: t.definition || t.d || '' }));
+        discussionPrompts = exObj?.discussionPrompts || exObj?.dp || [];
+        applicationNote = exObj?.applicationNote || exObj?.an || '';
+      } catch (e) { console.log('Extras week ' + w + ' failed:', e.message); }
 
-      // Merge both results
-      allWeekContent.push({
-        week: w,
-        lectureContent: lcObj?.lectureContent || lcObj?.lc || '',
-        keyTerms: (exObj?.keyTerms || exObj?.kt || []).map(t => ({ term: t.term || t.t || '', definition: t.definition || t.d || '' })),
-        discussionPrompts: exObj?.discussionPrompts || exObj?.dp || [],
-        applicationNote: exObj?.applicationNote || exObj?.an || '',
-      });
+      allWeekContent.push({ week: w, lectureContent, keyTerms, discussionPrompts, applicationNote });
     }
 
     // Phase: Exams — split into midterm + final (continue on error)
@@ -1599,7 +1598,7 @@ async function tpCall(body) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: (body.phase === 'week-lecture' || body.phase === 'exams' || body.phase === 'midterm' || body.phase === 'final') ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5',
+      model: (body.phase === 'master-plan' || body.phase === 'week-extras' || body.phase === 'quiz-writing') ? 'claude-haiku-4-5' : 'claude-sonnet-4-20250514',
       max_tokens: body.phase === 'week-lecture' ? 8000 : body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : body.phase === 'week-extras' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
