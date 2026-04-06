@@ -1428,16 +1428,20 @@ async function generateTeachPlan() {
     const totalWeeks = parseInt(c.weeks) || 15;
     const totalPhases = totalWeeks * 2 + 3; // masterPlan(N) + weekContent(N) + exams + quizzes + bible
 
-    // Phase 1: Master Plan — one week at a time
+    // Phase 1: Master Plan — one week at a time, error-tolerant
     const masterPlan = [];
     for (let w = 1; w <= totalWeeks; w++) {
-      S.teachPlanPhase = `Master plan: week ${w}/${totalWeeks}…`;
-      S._tpProgress = Math.round((w / totalWeeks) * 15);
-      R();
-      const result = await tpCall({ ...base, phase: 'master-plan', schedule: r.schedule, weeks: [w] });
-      // Result is a single object or array with one object
-      const obj = Array.isArray(result) ? result[0] : result;
-      if (obj) masterPlan.push(obj);
+      try {
+        S.teachPlanPhase = `Master plan: week ${w}/${totalWeeks}…`;
+        S._tpProgress = Math.round((w / totalWeeks) * 15);
+        R();
+        const result = await tpCall({ ...base, phase: 'master-plan', schedule: r.schedule, weeks: [w] });
+        const obj = Array.isArray(result) ? result[0] : result;
+        if (obj) { obj.week = obj.week || w; masterPlan.push(obj); }
+      } catch (e) {
+        console.log('Master plan week ' + w + ' failed:', e.message);
+        masterPlan.push({ week: w, biblePassages: [], keyConcepts: [], teachingObjective: '', applicationActivity: '' });
+      }
     }
 
     // Phase 2: Week Content — two calls per week (lecture + extras), error-tolerant
