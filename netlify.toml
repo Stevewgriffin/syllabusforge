@@ -29,3 +29,8 @@
   from = "/api/esv-passages"
   to = "/.netlify/functions/esv-passages"
   status = 200
+
+[[redirects]]
+  from = "/api/key"
+  to = "/.netlify/functions/api-key"
+  status = 200

@@ -1503,17 +1503,119 @@ async function generateTeachPlan() {
   }
 }
 
+// Cached API key — fetched once from server
+let _tpApiKey = null;
+async function getApiKey() {
+  if (_tpApiKey) return _tpApiKey;
+  const resp = await fetch('/api/key');
+  const data = await resp.json();
+  _tpApiKey = data.key;
+  return _tpApiKey;
+}
+
+// Call Anthropic API directly from browser (no Netlify timeout limits)
 async function tpCall(body) {
-  const resp = await fetch('/api/teach-plan', {
+  const apiKey = await getApiKey();
+  if (!apiKey) throw new Error('No API key configured — add ANTHROPIC_API_KEY in Netlify env vars');
+
+  const prompt = buildTPPrompt(body);
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5',
+      max_tokens: 3000,
+      system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
+      messages: [{ role: 'user', content: prompt }],
+    }),
   });
+
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${resp.status}`);
+    const errText = await resp.text().catch(() => '');
+    throw new Error('API error ' + resp.status + ': ' + errText.slice(0, 200));
   }
-  return resp.json();
+
+  const message = await resp.json();
+  const text = (message.content || []).map(b => b.text || '').join('');
+
+  // Extract JSON from response
+  let si = -1, sc = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{' || text[i] === '[') { sc = text[i]; si = i; break; }
+  }
+  if (si === -1) throw new Error('No JSON in AI response');
+  const ec = sc === '{' ? '}' : ']';
+  let depth = 0, ei = -1;
+  for (let i = si; i < text.length; i++) {
+    if (text[i] === sc) depth++;
+    else if (text[i] === ec) { depth--; if (depth === 0) { ei = i; break; } }
+  }
+  if (ei === -1) throw new Error('JSON truncated');
+  const jsonStr = text.slice(si, ei + 1);
+  try { return JSON.parse(jsonStr); }
+  catch (e) {
+    // Try repair: trailing commas
+    try { return JSON.parse(jsonStr.replace(/,\s*([}\]])/g, '$1')); }
+    catch (e2) { throw new Error('JSON parse error: ' + e.message); }
+  }
+}
+
+// Build prompt based on phase
+function buildTPPrompt(body) {
+  const { phase, course, slos, schedule, assessments, materialsList, scraped, weeks, masterPlan } = body;
+
+  if (phase === 'master-plan') {
+    const schedText = (schedule || []).map(w => 'W' + w.week + ':' + (w.title || '') + '|' + (w.reading || '')).join('; ');
+    return `Christ-centered async course, Williamson College.
+COURSE: ${course.title}|${course.code}|${course.weeks}wk
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 50)).join('; ')}
+SCHEDULE: ${schedText}
+
+For EACH week output JSON: bible passage refs, 3 key concepts, 1-sentence objective, 1-sentence activity.
+[{"week":1,"bp":["John 3:16-21"],"kc":["term1","term2","term3"],"obj":"...","act":"..."},...]
+Exactly ${course.weeks} objects. Ultra-compact.`;
+  }
+
+  if (phase === 'week-content') {
+    const weekPlans = (masterPlan || []).filter(w => (weeks || []).includes(w.week));
+    const wd = weekPlans.map(w => 'W' + w.week + ':Bible:' + (w.biblePassages || w.bp || []).join(',') + '|Concepts:' + (w.keyConcepts || w.kc || []).join(',')).join('; ');
+    return `${course.title}|${course.code} async course content.
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+Weeks: ${wd}
+
+For each week: lc=200-300 word lecture (Christ-centered), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
+[{"week":1,"lc":"...","kt":[{"t":"term","d":"def"}],"dp":["?","?"],"an":"..."},...]`;
+  }
+
+  if (phase === 'exams') {
+    const midWeek = Math.ceil((masterPlan || []).length / 2);
+    const topics = (masterPlan || []).map(w => 'W' + w.week + ':' + (w.kc || w.keyConcepts || []).slice(0, 2).join(',')).join('; ');
+    return `Christ-centered Bible course exams. ${course.title}|${course.code}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+Topics: ${topics}
+
+Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). JSON only:
+{"midterm":{"mc":[10 items:{"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1"}],"sa":[2 items:{"q":"?","ea":"short","p":10,"s":"SLO 1"}]},"final":{"mc":[10 items same],"essays":[1 item:{"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","d":"..."},{"l":"Proficient","d":"..."},{"l":"Developing","d":"..."},{"l":"Beginning","d":"..."}]}]}}
+Compact. 10 MC each exam.`;
+  }
+
+  if (phase === 'quizzes') {
+    const weekPlans = (masterPlan || []).filter(w => (weeks || []).includes(w.week));
+    const wd = weekPlans.map(w => 'W' + w.week + ':' + (w.keyConcepts || w.kc || []).join(',') + '|' + (w.biblePassages || w.bp || []).join(',')).join('; ');
+    return `${course.title} weekly quizzes.
+Weeks: ${wd}
+
+For each week, 5 MC questions. 4 options, correct answer, brief explanation.
+[{"week":1,"questions":[{"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"why"}]}]`;
+  }
+
+  throw new Error('Unknown phase: ' + phase);
 }
 
 // ── Teaching Plan HTML Template & ZIP Download ──────────────────────────────
