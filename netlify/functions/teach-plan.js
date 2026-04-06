@@ -37,28 +37,48 @@ exports.handler = async (event) => {
 
 // ── Helper: call Claude via direct fetch (no SDK = fast cold start) ─────────
 async function callClaude({ model = 'claude-haiku-4-5', maxTokens = 4000, system, prompt }) {
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: system || 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  const startTime = Date.now();
+  console.log('callClaude start:', model, 'maxTokens:', maxTokens, 'promptLen:', prompt.length);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+  let resp;
+  try {
+    resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: system || 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    if (fetchErr.name === 'AbortError') {
+      throw new Error('Anthropic API timed out after 25s');
+    }
+    throw fetchErr;
+  }
+  clearTimeout(timeoutId);
+
+  console.log('Anthropic responded:', resp.status, 'in', Date.now() - startTime, 'ms');
 
   if (!resp.ok) {
     const err = await resp.text();
-    throw new Error('Anthropic API error: ' + resp.status + ' ' + err.slice(0, 200));
+    throw new Error('Anthropic API error: ' + resp.status + ' ' + err.slice(0, 300));
   }
 
   const message = await resp.json();
   const text = (message.content || []).map((b) => b.text || '').join('');
+  console.log('Response length:', text.length, 'total ms:', Date.now() - startTime);
 
   // Extract outermost balanced {} or [] block
   let startChar = -1, startIdx = -1;
