@@ -1490,12 +1490,21 @@ async function generateTeachPlan() {
     const allQuizzes = [];
     for (let w = 1; w <= totalWeeks; w++) {
       try {
-        S.teachPlanPhase = `Generating quiz & writing: week ${w}/${totalWeeks}…`;
-        S._tpProgress = 70 + Math.round((w / totalWeeks) * 15);
+        S.teachPlanPhase = `Quiz: week ${w}/${totalWeeks}…`;
+        S._tpProgress = 70 + Math.round((w / totalWeeks) * 10);
         R();
-        const qz = await tpCall({ ...base, phase: 'quizzes', weeks: [w], masterPlan, schedule: r.schedule });
+        const qz = await tpCall({ ...base, phase: 'quiz-mc', weeks: [w], masterPlan, schedule: r.schedule });
         const qzObj = Array.isArray(qz) ? qz[0] : qz;
-        if (qzObj) allQuizzes.push(qzObj);
+
+        S.teachPlanPhase = `Writing assignment: week ${w}/${totalWeeks}…`;
+        R();
+        let writing = null;
+        try {
+          const wa = await tpCall({ ...base, phase: 'quiz-writing', weeks: [w], masterPlan, schedule: r.schedule });
+          writing = wa?.writing || wa;
+        } catch (e2) { console.log('Writing week ' + w + ' failed:', e2.message); }
+
+        allQuizzes.push({ week: w, questions: qzObj?.questions || [], writing });
       } catch (e) { console.log('Quiz week ' + w + ' failed:', e.message); allQuizzes.push({ week: w, questions: [], writing: null }); }
     }
 
@@ -1752,23 +1761,34 @@ Create final with 10 MC questions and 1 essay with rubric. JSON only:
     return 'Return empty JSON: {"midterm":{"mc":[],"sa":[]},"final":{"mc":[],"essays":[]}}';
   }
 
-  if (phase === 'quizzes') {
+  if (phase === 'quiz-mc') {
     const weekNum = (weeks || [1])[0];
     const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
     const sched = (schedule || []).find(w => w.week === weekNum) || {};
     const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
     const bpRefs = (wp.biblePassages || wp.bp || []).join(', ');
-    const reading = sched.reading || '';
-    return `${course.title} — Week ${weekNum} quiz and writing assignment.
-Topic: ${sched.title || ''} | Reading: ${reading} | Bible: ${bpRefs} | Concepts: ${concepts}
+    return `${course.title} — Week ${weekNum} quiz.
+Topic: ${sched.title || ''} | Reading: ${sched.reading || ''} | Bible: ${bpRefs} | Concepts: ${concepts}
+
+Create 10 multiple choice questions: 4 from lecture/textbook, 3 from Bible passages, 3 application. 4 options each.
+{"week":${weekNum},"questions":[{"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"brief"}]}
+Exactly 10 questions.`;
+  }
+
+  if (phase === 'quiz-writing') {
+    const weekNum = (weeks || [1])[0];
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    return `${course.title} — Week ${weekNum} writing assignment.
+Topic: ${sched.title || ''} | Reading: ${sched.reading || ''}
 SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
 
-Create for week ${weekNum}:
-1. 15 multiple choice questions covering: lecture content (5), textbook reading (5), Bible passages (5). Mix: 5 recall, 5 application, 5 analysis. 4 options each, correct answer, explanation.
-2. One written assignment prompt (250-500 word response) tied to this week's SLO. Include a grading rubric.
+Create one written assignment (250-500 word response) tied to this week's SLO.
+{"writing":{"prompt":"Assignment requiring 250-500 words...","slo":"SLO X","rubric":[{"l":"Excellent","d":"criteria"},{"l":"Proficient","d":"criteria"},{"l":"Developing","d":"criteria"},{"l":"Beginning","d":"criteria"}]}}`;
+  }
 
-Output ONE JSON object:
-{"week":${weekNum},"questions":[15 items: {"q":"?","options":["A","B","C","D"],"answer":"B","explanation":"why"}],"writing":{"prompt":"Assignment prompt requiring 250-500 word response...","slo":"SLO X","rubric":[{"l":"Excellent (90-100%)","d":"criteria"},{"l":"Proficient (80-89%)","d":"criteria"},{"l":"Developing (70-79%)","d":"criteria"},{"l":"Beginning (below 70%)","d":"criteria"}]}}`;
+  if (phase === 'quizzes') {
+    // Legacy fallback
+    return 'Return: {"week":1,"questions":[],"writing":null}';
   }
 
   throw new Error('Unknown phase: ' + phase);
