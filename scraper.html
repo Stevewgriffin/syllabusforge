@@ -103,16 +103,21 @@ code { background: #F0ECE3; border-radius: 4px; padding: 2px 6px; font-size: 12p
       <div class="step-num">4</div>
       <div class="step-content">
         <div class="step-title">Click "📚 Scrape Populi" in your bookmarks bar</div>
-        <div class="step-desc">The bookmarklet will scan the page, extract all visible text, books, files, and lesson content, and automatically download a <code>.json</code> file to your computer.</div>
+        <div class="step-desc">The bookmarklet will scan the page and ask for the course code (e.g., <code>BL331</code>). It then downloads <strong>two things</strong>:</div>
+        <div style="margin-top:6px;font-size:13px;color:#4A4A6A;line-height:1.7">
+          <div>📦 <strong>BL331-materials.zip</strong> — all attached files (PDFs, docs, etc.) bundled in a folder</div>
+          <div>📋 <strong>populi-scrape-BL331-*.json</strong> — metadata (books, lessons, descriptions)</div>
+        </div>
+        <div style="margin-top:6px;font-size:12px;color:var(--muted)">A progress overlay appears in the bottom-right corner while files download.</div>
       </div>
     </div>
 
-    <div class="notice notice-info" style="margin-top:8px">💡 Run it on multiple Populi pages (Lessons, Syllabus, Files) and import each JSON below — SyllabusForge merges them automatically.</div>
+    <div class="notice notice-info" style="margin-top:8px">💡 Run it on multiple Populi pages (Lessons, Syllabus, Files, Books) — each run downloads that page's files into a ZIP. Import all JSON files below and upload all ZIPs into SyllabusForge.</div>
   </div>
 
   <div class="card">
     <div class="card-title">Step 2 — Import Scraped Data</div>
-    <div class="card-hint">Upload the JSON file(s) the bookmarklet downloaded, or paste raw content from Populi directly.</div>
+    <div class="card-hint">Upload the JSON metadata file(s) the bookmarklet downloaded, or paste raw content from Populi directly. The materials ZIP can be uploaded directly into SyllabusForge's Materials step.</div>
 
     <div id="drop-area" class="drop-zone" onclick="document.getElementById('json-input').click()">
       <div style="font-size:28px;margin-bottom:8px">📂</div>
@@ -145,91 +150,11 @@ code { background: #F0ECE3; border-radius: 4px; padding: 2px 6px; font-size: 12p
 </div>
 
 <script>
-const scraperCode = `(function(){
-  function clean(s){ return (s||'').replace(/\\s+/g,' ').trim(); }
-  function getText(el){ return el ? clean(el.innerText||el.textContent||'') : ''; }
+// Bookmarklet loads the external inject script from SyllabusForge.
+// This allows updates without users needing to re-drag the bookmarklet.
+const bookmarkletCode = "(function(){var s=document.createElement('script');s.src='https://syllabusforge.netlify.app/scraper-inject.js?v='+Date.now();document.head.appendChild(s);})()";
 
-  var result = {
-    url: window.location.href,
-    scrapedAt: new Date().toISOString(),
-    pageTitle: getText(document.querySelector('h1,h2,.course-title,.offering-title,[class*="title"]')) || document.title,
-    courseInfo: {},
-    syllabus: '',
-    books: [],
-    files: [],
-    lessons: [],
-    rawSections: []
-  };
-
-  var infoEls = document.querySelectorAll('[class*="course-info"],[class*="course-detail"],[class*="info-row"],[class*="meta"]');
-  infoEls.forEach(function(el){
-    var t = getText(el);
-    if(t && t.length < 300) result.rawSections.push({type:'info', text:t});
-  });
-
-  var descEls = document.querySelectorAll('[class*="syllabus"],[class*="description"],[class*="overview"],[class*="course-desc"],[class*="content-area"],[class*="lesson-content"],main,article,.main-content');
-  descEls.forEach(function(el){
-    var t = getText(el);
-    if(t && t.length > 100){
-      result.rawSections.push({type:'content', text:t.slice(0,3000)});
-      if(!result.syllabus && t.length > 200) result.syllabus = t.slice(0,5000);
-    }
-  });
-
-  var allText = document.body.innerText || '';
-  var bookMatches = allText.match(/(?:ISBN[:\\s]+[\\d\\-X]+|(?:[A-Z][^.\\n]{10,80})(?:\\n|,\\s*)(?:[A-Z][a-z]+(?:\\s[A-Z][a-z]+)*),?\\s*(?:19|20)\\d{2})/g);
-  if(bookMatches) bookMatches.slice(0,20).forEach(function(b){ result.books.push(clean(b)); });
-
-  var bookEls = document.querySelectorAll('[class*="book"],[class*="textbook"],[class*="material"],[class*="required"],[class*="resource"]');
-  bookEls.forEach(function(el){
-    var t = getText(el);
-    if(t && t.length > 5 && t.length < 500){
-      result.books.push(t);
-      result.rawSections.push({type:'book', text:t});
-    }
-  });
-
-  var fileEls = document.querySelectorAll('a[href*=".pdf"],a[href*=".doc"],a[href*=".docx"],a[href*="download"],a[href*="file"],[class*="attachment"],[class*="file-row"],[class*="document"]');
-  fileEls.forEach(function(el){
-    var name = clean(el.innerText||el.getAttribute('download')||el.getAttribute('title')||'');
-    var href = el.href || '';
-    if(name && name.length < 200) result.files.push({name:name, url:href});
-  });
-
-  var lessonEls = document.querySelectorAll('[class*="lesson"],[class*="week"],[class*="module"],[class*="unit"],[class*="session"],li[class*="item"]');
-  lessonEls.forEach(function(el){
-    var t = getText(el);
-    if(t && t.length > 5 && t.length < 600) result.lessons.push(t);
-  });
-
-  var tables = document.querySelectorAll('table');
-  tables.forEach(function(tbl){
-    var rows = Array.from(tbl.querySelectorAll('tr')).map(function(tr){
-      return Array.from(tr.querySelectorAll('th,td')).map(function(td){ return clean(td.innerText||''); });
-    });
-    if(rows.length > 0) result.rawSections.push({type:'table', rows:rows});
-  });
-
-  var headings = document.querySelectorAll('h1,h2,h3,h4');
-  result.rawSections.push({type:'headings', items: Array.from(headings).map(function(h){ return {level:h.tagName, text:getText(h)}; }).filter(function(h){return h.text.length>1;})});
-
-  result.books = result.books.filter(function(v,i,a){ return v && a.indexOf(v)===i; });
-  result.lessons = result.lessons.filter(function(v,i,a){ return v && a.indexOf(v)===i; }).slice(0,60);
-
-  var blob = new Blob([JSON.stringify(result, null, 2)], {type:'application/json'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  var pagePart = window.location.pathname.replace(/[^a-z0-9]/gi,'-').slice(-30);
-  a.download = 'populi-scrape-' + pagePart + '-' + Date.now() + '.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  alert('✅ Populi scrape complete!\\n\\nFile downloaded: ' + a.download + '\\n\\nNow go back to SyllabusForge and import this file.');
-})();`;
-
-document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(scraperCode);
+document.getElementById('bm-link').href = 'javascript:' + encodeURIComponent(bookmarkletCode);
 
 let imported = [];
 

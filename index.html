@@ -199,6 +199,8 @@ let S = {
   syllabusDoc: null,
   // Populi scraper import
   scraped: null,
+  // Materials ZIP from Populi scraper (file list only — actual files stay in ZIP on disk)
+  materialsZip: null, // { name, fileCount, fileList: [{name, size}], totalSize }
   // Manual materials list
   materialsList: '',
   // Generation
@@ -459,6 +461,29 @@ YouTube: NT Wright on Galatians (Week 9)" style="min-height:110px" oninput="S.ma
     </div>
 
     ${scrapedBar}
+
+    ${S.materialsZip
+      ? `<div class="notice notice-success" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:start">
+            <div>
+              <div style="font-weight:600;margin-bottom:3px">📦 Materials ZIP Loaded — ${e(S.materialsZip.name)}</div>
+              <div style="font-size:12px;color:#4A4A6A">${S.materialsZip.fileCount} files · ${(S.materialsZip.totalSize/1024/1024).toFixed(1)} MB total</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px;max-height:80px;overflow-y:auto;line-height:1.6">${S.materialsZip.fileList.slice(0,15).map(f=>'<div>'+e(f.name)+' <span style="color:#999">('+(f.size/1024).toFixed(0)+' KB)</span></div>').join('')}${S.materialsZip.fileCount>15?'<div style="color:var(--amber)">+ '+(S.materialsZip.fileCount-15)+' more</div>':''}</div>
+            </div>
+            <button class="btn-sm" style="flex-shrink:0;margin-left:12px" onclick="S.materialsZip=null;R()">✕</button>
+          </div>
+        </div>`
+      : `<div style="margin-bottom:16px;background:#F5F2EC;border:2px dashed var(--amber-border);border-radius:8px;overflow:hidden;cursor:pointer" onclick="document.getElementById('zipfi').click()">
+          <div style="display:flex;gap:10px;align-items:center;padding:14px 16px">
+            <span style="font-size:22px">📦</span>
+            <div>
+              <div style="font-weight:600;color:var(--navy);font-size:13px">Upload Populi Materials ZIP</div>
+              <div style="font-size:12px;color:var(--muted)">The ZIP file downloaded by the Populi scraper bookmarklet (e.g., BL331-materials.zip)</div>
+            </div>
+          </div>
+        </div>
+        <input id="zipfi" type="file" accept=".zip" style="display:none" onchange="importMaterialsZip(event)">`
+    }
 
     <div style="font-size:11px;font-weight:600;color:#4A4A6A;letter-spacing:0.9px;text-transform:uppercase;margin-bottom:8px">Course Materials <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(Claude reads full content)</span></div>
     <div class="dropzone" onclick="document.getElementById('fi').click()">
@@ -779,6 +804,7 @@ function loadCourseAndAdvance() {
   S.files = [];
   S.syllabusDoc = null;
   S.scraped = null;
+  S.materialsZip = null;
   S.materialsList = '';
   S.result = null;
   S.error = '';
@@ -909,6 +935,57 @@ function importScraped(event) {
     S.scraped = merged;
     R();
   }).catch(err => alert(`Could not read file — ${err.message}`));
+}
+
+// ── MATERIALS ZIP IMPORT ─────────────────────────────────────────────────────
+async function importMaterialsZip(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const fileList = [];
+    let totalSize = 0;
+    let metadataJson = null;
+
+    zip.forEach((path, entry) => {
+      if (entry.dir) return;
+      const name = path.split('/').pop();
+      fileList.push({ name, size: entry._data?.uncompressedSize || 0, path });
+      totalSize += entry._data?.uncompressedSize || 0;
+
+      // Auto-import _metadata.json if present (written by scraper-inject.js)
+      if (name === '_metadata.json') metadataJson = entry;
+    });
+
+    S.materialsZip = {
+      name: file.name,
+      fileCount: fileList.filter(f => f.name !== '_metadata.json').length,
+      fileList: fileList.filter(f => f.name !== '_metadata.json'),
+      totalSize
+    };
+
+    // If the ZIP contains _metadata.json, auto-import it as scraped data
+    if (metadataJson && !S.scraped) {
+      try {
+        const metaText = await metadataJson.async('text');
+        const data = JSON.parse(metaText);
+        const merged = { books: [], lessons: [], fileNames: [], description: '', courseHint: {} };
+        merged.books.push(...(data.books || []));
+        merged.lessons.push(...(data.lessons || []));
+        merged.fileNames.push(...(data.files || []).map(f => f.name || f));
+        if (data.syllabus) merged.description = data.syllabus.slice(0, 500);
+        if (data.pageTitle) merged.courseHint.title = data.pageTitle;
+        merged.books = [...new Set(merged.books)].filter(Boolean).slice(0, 30);
+        merged.lessons = [...new Set(merged.lessons)].filter(Boolean).slice(0, 40);
+        merged.fileNames = [...new Set(merged.fileNames)].filter(Boolean);
+        S.scraped = merged;
+      } catch (e) { /* metadata parse failed — skip silently */ }
+    }
+
+    R();
+  } catch (err) {
+    alert('Could not read ZIP file — ' + err.message);
+  }
 }
 
 // ── SHARED ACTIONS ───────────────────────────────────────────────────────────
