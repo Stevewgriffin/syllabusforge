@@ -1467,11 +1467,16 @@ async function generateTeachPlan() {
       });
     }
 
-    // Phase: Exams
-    S.teachPlanPhase = 'Creating midterm & final exams…';
-    S._tpProgress = 65;
+    // Phase: Exams — split into midterm + final
+    S.teachPlanPhase = 'Creating midterm exam…';
+    S._tpProgress = 60;
     R();
-    const exams = await tpCall({ ...base, phase: 'exams', masterPlan });
+    const midterm = await tpCall({ ...base, phase: 'midterm', masterPlan });
+    S.teachPlanPhase = 'Creating final exam…';
+    S._tpProgress = 68;
+    R();
+    const final_ = await tpCall({ ...base, phase: 'final', masterPlan });
+    const exams = { midterm: midterm?.midterm || midterm, final: final_?.final || final_ };
 
     // Phase: Quizzes + Writing Assignments — one week at a time
     const allQuizzes = [];
@@ -1575,7 +1580,7 @@ async function tpCall(body) {
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: (body.phase === 'week-lecture' || body.phase === 'exams') ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5',
+      model: (body.phase === 'week-lecture' || body.phase === 'exams' || body.phase === 'midterm' || body.phase === 'final') ? 'claude-sonnet-4-20250514' : 'claude-haiku-4-5',
       max_tokens: body.phase === 'week-lecture' ? 8000 : body.phase === 'week-content' ? 8000 : body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 5000 : body.phase === 'week-extras' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
@@ -1606,9 +1611,20 @@ async function tpCall(body) {
   const jsonStr = text.slice(si, ei + 1);
   try { return JSON.parse(jsonStr); }
   catch (e) {
-    // Try repair: trailing commas
-    try { return JSON.parse(jsonStr.replace(/,\s*([}\]])/g, '$1')); }
-    catch (e2) { throw new Error('JSON parse error: ' + e.message); }
+    // Try multiple repair strategies
+    let repaired = jsonStr;
+    // Fix trailing commas before } or ]
+    repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+    // Fix unescaped newlines in strings
+    repaired = repaired.replace(/(?<=":"[^"]*)\n/g, '\\n');
+    // Fix missing commas between array elements (}{  or ]["  patterns)
+    repaired = repaired.replace(/}(\s*){/g, '},{');
+    repaired = repaired.replace(/](\s*)\[/g, '],[');
+    try { return JSON.parse(repaired); }
+    catch (e2) {
+      console.log('JSON repair failed. First 500 chars:', jsonStr.slice(0, 500));
+      throw new Error('JSON parse error: ' + e.message);
+    }
   }
 }
 
@@ -1700,16 +1716,30 @@ Output ONE JSON object for week ${weekNum}:
 lc=LONG lecture (2000-3000 words, structured, substantive), kt=7 key terms from reading, dp=3 discussion prompts, an=application.`;
   }
 
-  if (phase === 'exams') {
+  if (phase === 'midterm') {
     const midWeek = Math.ceil((masterPlan || []).length / 2);
-    const topics = (masterPlan || []).map(w => 'W' + w.week + ':' + (w.kc || w.keyConcepts || []).slice(0, 2).join(',')).join('; ');
-    return `Christ-centered Bible course exams. ${course.title}|${course.code}
+    const topics = (masterPlan || []).filter(w => w.week <= midWeek).map(w => 'W' + w.week + ':' + (w.kc || w.keyConcepts || []).slice(0, 2).join(',')).join('; ');
+    return `Christ-centered Bible course MIDTERM exam. ${course.title}|${course.code}
+Covers weeks 1-${midWeek}. Topics: ${topics}
 SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
-Topics: ${topics}
 
-Create MIDTERM (weeks 1-${midWeek}) and FINAL (all weeks). JSON only:
-{"midterm":{"mc":[10 items:{"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1"}],"sa":[2 items:{"q":"?","ea":"short","p":10,"s":"SLO 1"}]},"final":{"mc":[10 items same],"essays":[1 item:{"pr":"prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","d":"..."},{"l":"Proficient","d":"..."},{"l":"Developing","d":"..."},{"l":"Beginning","d":"..."}]}]}}
-Compact. 10 MC each exam.`;
+Create midterm with 10 MC questions and 2 short answer. JSON only:
+{"mc":[10 items:{"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1"}],"sa":[2 items:{"q":"?","ea":"expected answer","p":10,"s":"SLO 1"}]}`;
+  }
+
+  if (phase === 'final') {
+    const topics = (masterPlan || []).map(w => 'W' + w.week + ':' + (w.kc || w.keyConcepts || []).slice(0, 2).join(',')).join('; ');
+    return `Christ-centered Bible course FINAL exam. ${course.title}|${course.code}
+Covers ALL weeks. Topics: ${topics}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
+
+Create final with 10 MC questions and 1 essay with rubric. JSON only:
+{"mc":[10 items:{"q":"?","o":["A","B","C","D"],"a":"B","s":"SLO 1"}],"essays":[{"pr":"essay prompt","p":25,"s":"SLO 1","rubric":[{"l":"Excellent","d":"criteria"},{"l":"Proficient","d":"criteria"},{"l":"Developing","d":"criteria"},{"l":"Beginning","d":"criteria"}]}]}`;
+  }
+
+  if (phase === 'exams') {
+    // Legacy fallback — shouldn't be called anymore
+    return 'Return empty JSON: {"midterm":{"mc":[],"sa":[]},"final":{"mc":[],"essays":[]}}';
   }
 
   if (phase === 'quizzes') {
