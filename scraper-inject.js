@@ -127,58 +127,68 @@
       }
     });
 
-    // File links — broad detection for Populi and other LMS platforms
-    // Populi uses internal URLs (no file extension in href), so we check link TEXT for extensions
-    var fileExtPattern = /\.(pdf|docx?|pptx?|xlsx?|csv|txt|rtf|jpe?g|png|gif|mp4|mp3|zip)$/i;
-    var seenFileUrls = {};
+    // ── File detection ──────────────────────────────────────────────────────────
+    var seenFileIds = {};
 
-    // Strategy 1: Links with file extensions in the href (standard sites)
-    var hrefSelectors = 'a[href*=".pdf"],a[href*=".doc"],a[href*=".docx"],a[href*=".pptx"],a[href*=".xlsx"],a[href*="download"],a[href*="/file"]';
-    // Strategy 2: Links with file extensions in the text (Populi-style)
-    // Strategy 3: Links inside table rows (Populi Files tab)
-    // Strategy 4: Elements with file-related class names
-    var classSelectors = '[class*="attachment"],[class*="file-row"],[class*="document"],[class*="file-name"]';
+    // POPULI-SPECIFIC: detect file rows by the js-file_row class
+    // Each row has: checkbox with file ID, span.js-name with filename,
+    // and the download URL is /router/courseofferings/XXXX/folders/download?files[]=ID
+    var populiFileRows = document.querySelectorAll('tr.js-file_row');
+    if (populiFileRows.length > 0) {
+      // Extract course offering ID from the URL or from download link
+      var courseOfferingMatch = window.location.href.match(/courseofferings\/(\d+)/);
+      var courseOfferingId = courseOfferingMatch ? courseOfferingMatch[1] : '';
 
-    // Gather from href-based and class-based selectors
-    var fileEls = document.querySelectorAll(hrefSelectors + ',' + classSelectors);
-    fileEls.forEach(function (el) {
-      var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
-      var href = el.href || '';
-      if (name && name.length < 200 && href && !seenFileUrls[href]) {
-        seenFileUrls[href] = true;
-        result.files.push({ name: name, url: href });
-      }
-    });
+      populiFileRows.forEach(function (tr) {
+        var checkbox = tr.querySelector('input.js-file_checkbox');
+        var nameSpan = tr.querySelector('.js-name');
+        if (!checkbox || !nameSpan) return;
 
-    // Scan ALL links on the page — if the link text looks like a filename, grab it
-    document.querySelectorAll('a[href]').forEach(function (el) {
-      var href = el.href || '';
-      if (!href || seenFileUrls[href]) return;
-      var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
-      if (!name || name.length > 200) return;
-      // Check if the link text contains a file extension
-      if (fileExtPattern.test(name)) {
-        seenFileUrls[href] = true;
-        result.files.push({ name: name, url: href });
-      }
-    });
+        var fileId = checkbox.value;
+        var name = clean(nameSpan.textContent || '');
+        if (!name || !fileId || seenFileIds[fileId]) return;
+        seenFileIds[fileId] = true;
 
-    // Populi-specific: scan table rows in the Files tab for file entries
-    // Populi shows files in a table with columns: Name, Kind, Size, Date Added
-    document.querySelectorAll('table tr, [class*="file-list"] tr, [class*="files"] tr').forEach(function (tr) {
-      var link = tr.querySelector('a[href]');
-      if (!link) return;
-      var href = link.href || '';
-      if (!href || seenFileUrls[href]) return;
-      var name = clean(link.innerText || '');
-      // Check if the row has a "Kind" or "Size" column suggesting it's a file row
-      var rowText = clean(tr.innerText || '');
-      var isFileRow = /\b(word|pdf|image|excel|powerpoint|document|jpeg|png|gif|kb|mb)\b/i.test(rowText);
-      if (name && name.length < 200 && isFileRow) {
-        seenFileUrls[href] = true;
-        result.files.push({ name: name, url: href });
-      }
-    });
+        // Build the actual download URL
+        var downloadUrl = courseOfferingId
+          ? '/router/courseofferings/' + courseOfferingId + '/folders/download?files%5B%5D=' + fileId
+          : '/router/files/' + fileId + '/show';
+
+        // Make it absolute
+        var base = window.location.origin;
+        downloadUrl = base + downloadUrl;
+
+        var size = parseInt(tr.getAttribute('data-size') || '0', 10);
+        result.files.push({ name: name, url: downloadUrl, fileId: fileId, size: size });
+      });
+    }
+
+    // GENERIC fallback: standard href-based + text-based detection for non-Populi sites
+    if (populiFileRows.length === 0) {
+      var fileExtPattern = /\.(pdf|docx?|pptx?|xlsx?|csv|txt|rtf|jpe?g|png|gif|mp4|mp3|zip)$/i;
+      var seenFileUrls = {};
+
+      // Links with file extensions in href
+      document.querySelectorAll('a[href*=".pdf"],a[href*=".doc"],a[href*=".docx"],a[href*=".pptx"],a[href*=".xlsx"],a[href*="download"],a[href*="/file"],[class*="attachment"],[class*="file-row"],[class*="document"]').forEach(function (el) {
+        var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
+        var href = el.href || '';
+        if (name && name.length < 200 && href && !seenFileUrls[href]) {
+          seenFileUrls[href] = true;
+          result.files.push({ name: name, url: href });
+        }
+      });
+
+      // Links where text looks like a filename
+      document.querySelectorAll('a[href]').forEach(function (el) {
+        var href = el.href || '';
+        if (!href || seenFileUrls[href]) return;
+        var name = clean(el.innerText || el.getAttribute('download') || el.getAttribute('title') || '');
+        if (name && name.length < 200 && fileExtPattern.test(name)) {
+          seenFileUrls[href] = true;
+          result.files.push({ name: name, url: href });
+        }
+      });
+    }
 
     // Lessons / weeks
     var lessonEls = document.querySelectorAll('[class*="lesson"],[class*="week"],[class*="module"],[class*="unit"],[class*="session"],li[class*="item"]');
@@ -212,16 +222,20 @@
 
   // ── Guess course code from page content ──────────────────────────────────────
   function guessCourseCode() {
-    var title = getText(document.querySelector('h1,h2,.course-title,.offering-title,[class*="title"]')) || document.title || '';
-    // Try to find pattern like "BL331" or "TH 201" etc.
+    // Populi-specific: course name is in h1.course_offering_name, e.g. "BL 331: The Life of Christ"
+    var populiTitle = getText(document.querySelector('h1.course_offering_name'));
+    if (populiTitle) {
+      var m = populiTitle.match(/\b([A-Z]{2,4})\s*(\d{3,4})\b/);
+      if (m) return m[1] + m[2];
+    }
+    // Also try the page title (Populi sets it to "BL 331: Files" etc.)
+    var pageTitle = document.title || '';
+    var titleMatch = pageTitle.match(/\b([A-Z]{2,4})\s*(\d{3,4})\b/);
+    if (titleMatch) return titleMatch[1] + titleMatch[2];
+    // Generic fallback
+    var title = getText(document.querySelector('h1,h2,.course-title,.offering-title,[class*="title"]')) || '';
     var match = title.match(/\b([A-Z]{2,4})\s*(\d{3,4})\b/);
     if (match) return match[1] + match[2];
-    // Try in the URL
-    var urlMatch = window.location.href.match(/\/([A-Z]{2,4})\s*(\d{3,4})\b/i);
-    if (urlMatch) return urlMatch[1].toUpperCase() + urlMatch[2];
-    // Try anywhere on page
-    var bodyMatch = (document.body.innerText || '').match(/\b([A-Z]{2,4})\s*(\d{3,4})\b/);
-    if (bodyMatch) return bodyMatch[1] + bodyMatch[2];
     return 'COURSE';
   }
 
