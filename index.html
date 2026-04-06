@@ -1404,32 +1404,34 @@ async function generateTeachPlan() {
   const base = { course: c, slos: S.slos };
 
   try {
-    // Phase 1: Master Plan
-    S.teachPlanPhase = 'Phase 1/6 — Creating master content plan…';
-    S._tpProgress = 5;
-    R();
-    const masterPlan = await tpCall({ ...base, phase: 'master-plan', schedule: r.schedule, assessments: r.assessments, materialsList: S.materialsList, scraped: S.scraped });
-    S._tpProgress = 15;
-
-    // Phase 2-5: Week Content (batches of ~4 weeks)
     const totalWeeks = parseInt(c.weeks) || 15;
-    const weekNums = Array.from({length: totalWeeks}, (_, i) => i + 1);
-    const batches = [];
-    for (let i = 0; i < weekNums.length; i += 2) {
-      batches.push(weekNums.slice(i, i + 4));
+    const totalPhases = totalWeeks * 2 + 3; // masterPlan(N) + weekContent(N) + exams + quizzes + bible
+
+    // Phase 1: Master Plan — one week at a time
+    const masterPlan = [];
+    for (let w = 1; w <= totalWeeks; w++) {
+      S.teachPlanPhase = `Master plan: week ${w}/${totalWeeks}…`;
+      S._tpProgress = Math.round((w / totalWeeks) * 15);
+      R();
+      const result = await tpCall({ ...base, phase: 'master-plan', schedule: r.schedule, weeks: [w] });
+      // Result is a single object or array with one object
+      const obj = Array.isArray(result) ? result[0] : result;
+      if (obj) masterPlan.push(obj);
     }
 
+    // Phase 2: Week Content — one week at a time
     const allWeekContent = [];
-    for (let b = 0; b < batches.length; b++) {
-      S.teachPlanPhase = `Phase ${2 + b}/${4 + batches.length} — Writing content for weeks ${batches[b][0]}–${batches[b][batches[b].length-1]}…`;
-      S._tpProgress = 15 + Math.round((b + 1) / batches.length * 40);
+    for (let w = 1; w <= totalWeeks; w++) {
+      S.teachPlanPhase = `Writing content: week ${w}/${totalWeeks}…`;
+      S._tpProgress = 15 + Math.round((w / totalWeeks) * 40);
       R();
-      const wc = await tpCall({ ...base, phase: 'week-content', weeks: batches[b], masterPlan });
-      allWeekContent.push(...(Array.isArray(wc) ? wc : []));
+      const wc = await tpCall({ ...base, phase: 'week-content', weeks: [w], masterPlan });
+      const wcObj = Array.isArray(wc) ? wc[0] : wc;
+      if (wcObj) allWeekContent.push(wcObj);
     }
 
     // Phase: Exams
-    S.teachPlanPhase = `Phase ${3 + batches.length}/${4 + batches.length} — Creating midterm & final exams…`;
+    S.teachPlanPhase = 'Creating midterm & final exams…';
     S._tpProgress = 65;
     R();
     const exams = await tpCall({ ...base, phase: 'exams', masterPlan });
@@ -1530,7 +1532,7 @@ async function tpCall(body) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5',
-      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'week-content' ? 4000 : 4000,
+      max_tokens: body.phase === 'exams' ? 6000 : body.phase === 'quizzes' ? 3000 : 2000,
       system: 'You are a JSON-only API. Output only raw valid JSON — no preamble, no explanation, no markdown fences.',
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -1571,26 +1573,31 @@ function buildTPPrompt(body) {
   const { phase, course, slos, schedule, assessments, materialsList, scraped, weeks, masterPlan } = body;
 
   if (phase === 'master-plan') {
-    const schedText = (schedule || []).map(w => 'W' + w.week + ':' + (w.title || '') + '|' + (w.reading || '')).join('; ');
-    return `Christ-centered async course, Williamson College.
-COURSE: ${course.title}|${course.code}|${course.weeks}wk
-SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 50)).join('; ')}
-SCHEDULE: ${schedText}
+    // weeks contains which week numbers to generate (usually just 1)
+    const weekNum = (weeks || [1])[0];
+    const sched = (schedule || []).find(w => w.week === weekNum) || {};
+    return `Christ-centered Bible course, Williamson College.
+COURSE: ${course.title}|${course.code}
+Week ${weekNum} topic: "${sched.title||''}" — ${sched.topic||''} | Reading: ${sched.reading||''}
+SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
 
-For EACH week output JSON: bible passage refs, 3 key concepts, 1-sentence objective, 1-sentence activity.
-[{"week":1,"bp":["John 3:16-21"],"kc":["term1","term2","term3"],"obj":"...","act":"..."},...]
-Exactly ${course.weeks} objects. Ultra-compact.`;
+For week ${weekNum}, output ONE JSON object:
+{"week":${weekNum},"bp":["Genesis 1:1-10"],"kc":["concept1","concept2","concept3"],"obj":"Students will...","act":"Activity description"}
+bp=1-2 Bible passage references relevant to this week's topic. kc=3 key concepts. obj=learning objective. act=application activity.`;
   }
 
   if (phase === 'week-content') {
-    const weekPlans = (masterPlan || []).filter(w => (weeks || []).includes(w.week));
-    const wd = weekPlans.map(w => 'W' + w.week + ':Bible:' + (w.biblePassages || w.bp || []).join(',') + '|Concepts:' + (w.keyConcepts || w.kc || []).join(',')).join('; ');
-    return `${course.title}|${course.code} async course content.
+    const weekNum = (weeks || [1])[0];
+    const wp = (masterPlan || []).find(w => w.week === weekNum) || {};
+    const bpRefs = (wp.biblePassages || wp.bp || []).join(', ');
+    const concepts = (wp.keyConcepts || wp.kc || []).join(', ');
+    return `${course.title}|${course.code} — Week ${weekNum} content.
 SLOs: ${(slos || []).map((s, i) => (i + 1) + '.' + s.slice(0, 40)).join('; ')}
-Weeks: ${wd}
+Bible: ${bpRefs} | Concepts: ${concepts}
 
-For each week: lc=200-300 word lecture (Christ-centered), kt=3 key terms [{t,d}], dp=2 discussion questions, an=1 sentence application.
-[{"week":1,"lc":"...","kt":[{"t":"term","d":"def"}],"dp":["?","?"],"an":"..."},...]`;
+For week ${weekNum}, output ONE JSON object:
+{"week":${weekNum},"lc":"200-300 word Christ-centered lecture referencing the Bible passages","kt":[{"t":"term","d":"definition"},{"t":"term2","d":"def2"},{"t":"term3","d":"def3"}],"dp":["Discussion question 1?","Discussion question 2?"],"an":"One sentence application activity."}
+lc=lecture content, kt=key terms, dp=discussion prompts, an=application note.`;
   }
 
   if (phase === 'exams') {
